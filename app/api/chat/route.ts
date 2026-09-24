@@ -2,17 +2,19 @@ import { NextRequest, NextResponse } from 'next/server';
 import { Ollama } from '@langchain/community/llms/ollama';
 import { OllamaEmbeddings } from '@langchain/community/embeddings/ollama';
 import { MongoDBAtlasVectorSearch } from '@langchain/mongodb';
-import clientPromise from '@/lib/mongodb';
+import clientPromise, { ensureVectorIndex } from '@/lib/mongodb';
 import { PromptTemplate } from '@langchain/core/prompts';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
 
 function formatDocumentsAsString(documents: any[]) {
+  if (!documents || documents.length === 0) return 'Nenhum documento encontrado para esta matéria.';
   return documents.map((doc) => doc.pageContent).join('\n\n');
 }
 
 export async function POST(req: NextRequest) {
   try {
+    await ensureVectorIndex();
     const { messages, materia } = await req.json();
     const currentMessageContent = messages[messages.length - 1].content;
 
@@ -48,8 +50,7 @@ export async function POST(req: NextRequest) {
 
     const prompt = PromptTemplate.fromTemplate(`
 Você é um assistente acadêmico especializado na matéria "{materia}".
-Responda à pergunta do usuário baseando-se APENAS no contexto extraído dos documentos abaixo.
-Se a resposta não estiver no contexto, diga que não sabe, não invente informações.
+Responda à pergunta do usuário baseando-se no contexto extraído dos documentos abaixo. Se não houver contexto suficiente ou nenhum documento relevante, informe educadamente que ainda não há documentos sobre o assunto cadastrados para essa matéria.
 Seja claro, educado e use formatação Markdown quando necessário.
 
 Contexto dos Documentos:
@@ -63,8 +64,13 @@ Resposta:
     const chain = RunnableSequence.from([
       {
         context: async (input: { question: string; materia: string }) => {
-          const docs = await retriever.invoke(input.question);
-          return formatDocumentsAsString(docs);
+          try {
+            const docs = await retriever.invoke(input.question);
+            return formatDocumentsAsString(docs);
+          } catch (err) {
+            console.warn('Retriever fallback:', err);
+            return 'Nenhum documento encontrado.';
+          }
         },
         question: (input: { question: string; materia: string }) => input.question,
         materia: (input: { question: string; materia: string }) => input.materia,

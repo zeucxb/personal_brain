@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import clientPromise from '@/lib/mongodb';
+import clientPromise, { ensureVectorIndex } from '@/lib/mongodb';
 import { OllamaEmbeddings } from '@langchain/community/embeddings/ollama';
 import { MongoDBAtlasVectorSearch } from '@langchain/mongodb';
 import pdfParse from 'pdf-parse';
@@ -7,6 +7,7 @@ import { Document } from '@langchain/core/documents';
 
 export async function POST(req: NextRequest) {
   try {
+    await ensureVectorIndex();
     const formData = await req.formData();
     const file = formData.get('file') as File;
     const materia = formData.get('materia') as string;
