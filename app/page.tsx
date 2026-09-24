@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import {
@@ -31,6 +31,15 @@ import SourcesList, { ChatSource, linkifyCitations } from './components/SourcesL
 import { CustomAgent } from '@/lib/agents/types';
 import { MermaidChart } from './components/MermaidChart';
 import { CustomSkill } from '@/lib/skills/types';
+import {
+  parseFlashcardsFromMarkdown,
+  parseQuizFromMarkdown,
+  parseInfographicFromMarkdown,
+  FlashcardsWidget,
+  QuizWidget,
+  InfographicWidget,
+  TableWidget,
+} from './components/genui';
 
 type Message = {
   id: string;
@@ -85,9 +94,130 @@ function AssistantMessage({
   status?: string;
 }) {
   const [selectedSource, setSelectedSource] = useState<ChatSource | null>(null);
+  const [viewMode, setViewMode] = useState<'interactive' | 'text'>('interactive');
 
   const cleanContent = cleanAiResponse(content);
   const processedContent = linkifyCitations(cleanContent);
+
+  // Detecção inteligente de GenUI para enriquecimento da mensagem
+  const flashcards = useMemo(() => {
+    return cleanContent ? parseFlashcardsFromMarkdown(cleanContent) : null;
+  }, [cleanContent]);
+
+  const quizQuestions = useMemo(() => {
+    return cleanContent ? parseQuizFromMarkdown(cleanContent) : null;
+  }, [cleanContent]);
+
+  const infographicData = useMemo(() => {
+    return cleanContent ? parseInfographicFromMarkdown(cleanContent) : null;
+  }, [cleanContent]);
+
+  const hasGenUi = Boolean(flashcards || quizQuestions || infographicData);
+
+  // Texto introdutório antes dos cards ou questões, se houver
+  const introText = useMemo(() => {
+    if (flashcards) {
+      const m = cleanContent.match(/###\s*(?:🗂️\s*)?(?:Card|Flashcard)/i);
+      if (m && m.index && m.index > 0) {
+        return cleanContent.slice(0, m.index).trim();
+      }
+    } else if (quizQuestions) {
+      const m = cleanContent.match(/#{3,4}\s*Quest[aã]o\s*\d+/i);
+      if (m && m.index && m.index > 0) {
+        return cleanContent.slice(0, m.index).trim();
+      }
+    }
+    return '';
+  }, [cleanContent, flashcards, quizQuestions]);
+
+  const processedIntro = useMemo(() => {
+    return introText ? linkifyCitations(introText) : '';
+  }, [introText]);
+
+  // Markdown custom components (reutilizados para tabelas e citações)
+  const markdownComponents = {
+    table: ({ children, ...props }: any) => <TableWidget {...props}>{children}</TableWidget>,
+    code: ({ className, children, ...props }: any) => {
+      const match = /language-(\w+)/.exec(className || '');
+      const lang = match ? match[1] : '';
+
+      if (lang === 'mermaid') {
+        return <MermaidChart chart={String(children).replace(/\n$/, '')} />;
+      }
+
+      if (lang === 'genui-flashcards' || lang === 'genui_flashcards') {
+        try {
+          const data = JSON.parse(String(children));
+          return <FlashcardsWidget cards={data} sources={sources} onSelectSource={setSelectedSource} />;
+        } catch (e) {
+          // fallback
+        }
+      }
+
+      if (lang === 'genui-quiz' || lang === 'genui_quiz') {
+        try {
+          const data = JSON.parse(String(children));
+          return <QuizWidget questions={data} sources={sources} onSelectSource={setSelectedSource} />;
+        } catch (e) {
+          // fallback
+        }
+      }
+
+      if (lang === 'genui-infographic' || lang === 'genui_infographic') {
+        try {
+          const data = JSON.parse(String(children));
+          return <InfographicWidget data={data} sources={sources} onSelectSource={setSelectedSource} />;
+        } catch (e) {
+          // fallback
+        }
+      }
+
+      const isInline = !match && !String(children).includes('\n');
+      return isInline ? (
+        <code className="inline-code" {...props}>
+          {children}
+        </code>
+      ) : (
+        <code className={className} {...props}>
+          {children}
+        </code>
+      );
+    },
+    a: ({ href, children }: any) => {
+      if (href && (href.startsWith('#source-') || href.startsWith('citation:'))) {
+        const citationIndex = parseInt(
+          href.replace(/^#source-|^citation:/, ''),
+          10
+        );
+        const matchedSource = sources?.find((s) => s.index === citationIndex);
+        return (
+          <button
+            type="button"
+            className="inline-citation"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              if (matchedSource) {
+                setSelectedSource(matchedSource);
+              }
+            }}
+            title={
+              matchedSource
+                ? `Ver fonte [${citationIndex}]: ${matchedSource.title}`
+                : `Fonte [${citationIndex}]`
+            }
+          >
+            [{citationIndex}]
+          </button>
+        );
+      }
+      return (
+        <a href={href} target="_blank" rel="noreferrer">
+          {children}
+        </a>
+      );
+    },
+  };
 
   return (
     <>
@@ -98,64 +228,92 @@ function AssistantMessage({
       />
       {content ? (
         <div className="markdown-content">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            urlTransform={(url) => url}
-            components={{
-              code: ({ className, children, ...props }: any) => {
-                const match = /language-(\w+)/.exec(className || '');
-                if (match && match[1] === 'mermaid') {
-                  return <MermaidChart chart={String(children).replace(/\n$/, '')} />;
-                }
-                const isInline = !match && !String(children).includes('\n');
-                return isInline ? (
-                  <code className="inline-code" {...props}>
-                    {children}
-                  </code>
-                ) : (
-                  <code className={className} {...props}>
-                    {children}
-                  </code>
-                );
-              },
-              a: ({ href, children }) => {
-                if (href && (href.startsWith('#source-') || href.startsWith('citation:'))) {
-                  const citationIndex = parseInt(
-                    href.replace(/^#source-|^citation:/, ''),
-                    10
-                  );
-                  const matchedSource = sources?.find((s) => s.index === citationIndex);
-                  return (
-                    <button
-                      type="button"
-                      className="inline-citation"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        if (matchedSource) {
-                          setSelectedSource(matchedSource);
-                        }
-                      }}
-                      title={
-                        matchedSource
-                          ? `Ver fonte [${citationIndex}]: ${matchedSource.title}`
-                          : `Fonte [${citationIndex}]`
-                      }
-                    >
-                      [{citationIndex}]
-                    </button>
-                  );
-                }
-                return (
-                  <a href={href} target="_blank" rel="noreferrer">
-                    {children}
-                  </a>
-                );
-              },
-            }}
-          >
-            {processedContent}
-          </ReactMarkdown>
+          {hasGenUi && (
+            <div className="flex items-center justify-between mb-3 pb-2 border-b border-slate-700/50">
+              <div className="flex items-center gap-1.5 text-xs text-amber-400 font-semibold tracking-wide">
+                <Sparkles size={14} className="text-amber-400" />
+                <span>
+                  {flashcards
+                    ? 'GenUI • Flashcards Interativos'
+                    : quizQuestions
+                    ? 'GenUI • Simulador de Atividades'
+                    : 'GenUI • Infográfico Executivo'}
+                </span>
+              </div>
+              <div className="flex items-center gap-1 bg-slate-900/80 p-0.5 rounded-lg border border-slate-700/60 text-xs">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('interactive')}
+                  className={`px-2.5 py-1 rounded-md font-medium transition ${
+                    viewMode === 'interactive'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  ⚡ Interativo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('text')}
+                  className={`px-2.5 py-1 rounded-md font-medium transition ${
+                    viewMode === 'text'
+                      ? 'bg-slate-700 text-slate-200 shadow-sm'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  📄 Texto
+                </button>
+              </div>
+            </div>
+          )}
+
+          {hasGenUi && viewMode === 'interactive' ? (
+            <div>
+              {processedIntro && (
+                <div className="mb-3">
+                  <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    urlTransform={(url) => url}
+                    components={markdownComponents}
+                  >
+                    {processedIntro}
+                  </ReactMarkdown>
+                </div>
+              )}
+
+              {flashcards && (
+                <FlashcardsWidget
+                  cards={flashcards}
+                  sources={sources}
+                  onSelectSource={setSelectedSource}
+                />
+              )}
+
+              {quizQuestions && (
+                <QuizWidget
+                  questions={quizQuestions}
+                  sources={sources}
+                  onSelectSource={setSelectedSource}
+                />
+              )}
+
+              {infographicData && (
+                <InfographicWidget
+                  data={infographicData}
+                  sources={sources}
+                  onSelectSource={setSelectedSource}
+                />
+              )}
+            </div>
+          ) : (
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              urlTransform={(url) => url}
+              components={markdownComponents}
+            >
+              {processedContent}
+            </ReactMarkdown>
+          )}
         </div>
       ) : (
         <div className="agent-thinking-card">
@@ -166,6 +324,7 @@ function AssistantMessage({
     </>
   );
 }
+
 
 export default function ChatApp() {
   const [subjects, setSubjects] = useState<string[]>(['Geral']);
