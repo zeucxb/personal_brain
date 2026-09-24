@@ -19,9 +19,14 @@ import {
   AlertCircle,
   Loader2,
   Clock,
+  ChevronDown,
+  Sparkles,
+  Bot,
+  Settings,
 } from 'lucide-react';
 
 import SourcesList, { ChatSource, linkifyCitations } from './components/SourcesList';
+import { CustomAgent } from '@/lib/agents/types';
 
 type Message = {
   id: string;
@@ -35,6 +40,7 @@ type Conversation = {
   title: string;
   materia: string;
   messages: Message[];
+  agentId?: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -147,6 +153,22 @@ export default function ChatApp() {
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [activeConvId, setActiveConvId] = useState<string | null>(null);
 
+  // Custom Agents State
+  const [agents, setAgents] = useState<CustomAgent[]>([]);
+  const [activeAgentId, setActiveAgentId] = useState<string>('agent_rag_general');
+  const [showAgentDropdown, setShowAgentDropdown] = useState(false);
+  const [showAgentsModal, setShowAgentsModal] = useState(false);
+  const [isEditingAgent, setIsEditingAgent] = useState(false);
+  const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
+
+  // Agent Form State
+  const [agentFormName, setAgentFormName] = useState('');
+  const [agentFormAvatar, setAgentFormAvatar] = useState('🎓');
+  const [agentFormDesc, setAgentFormDesc] = useState('');
+  const [agentFormPrompt, setAgentFormPrompt] = useState('');
+  const [agentFormMateria, setAgentFormMateria] = useState('Qualquer');
+  const [agentFormCanConsult, setAgentFormCanConsult] = useState(true);
+
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
@@ -163,6 +185,19 @@ export default function ChatApp() {
   const [deletingDoc, setDeletingDoc] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  // Fetch all agents
+  const fetchAgents = async () => {
+    try {
+      const res = await fetch('/api/agents');
+      const data = await res.json();
+      if (data.agents && data.agents.length > 0) {
+        setAgents(data.agents);
+      }
+    } catch (e) {
+      console.error('Error fetching agents:', e);
+    }
+  };
 
   // Fetch all subjects and documents on mount
   const fetchSubjects = async () => {
@@ -197,6 +232,9 @@ export default function ChatApp() {
       if (data.conversations && data.conversations.length > 0) {
         setConversations(data.conversations);
         setActiveConvId(data.conversations[0].id);
+        if (data.conversations[0].agentId) {
+          setActiveAgentId(data.conversations[0].agentId);
+        }
       } else {
         // Create an initial conversation if none exists
         const newId = `c_${Date.now()}`;
@@ -204,6 +242,7 @@ export default function ChatApp() {
           id: newId,
           title: 'Nova conversa',
           materia: subject,
+          agentId: activeAgentId || 'agent_rag_general',
           messages: [],
           createdAt: Date.now(),
           updatedAt: Date.now(),
@@ -232,6 +271,7 @@ export default function ChatApp() {
   useEffect(() => {
     fetchSubjects();
     fetchDocuments();
+    fetchAgents();
   }, []);
 
   useEffect(() => {
@@ -246,6 +286,7 @@ export default function ChatApp() {
     conversations.find((c) => c.id === activeConvId) || conversations[0] || null;
 
   const currentMessages = activeConversation ? activeConversation.messages : [];
+  const currentAgent = agents.find((a) => a.id === activeAgentId) || agents[0] || null;
 
   const handleCreateNewConversation = () => {
     const newId = `c_${Date.now()}`;
@@ -253,6 +294,7 @@ export default function ChatApp() {
       id: newId,
       title: 'Nova conversa',
       materia: activeSubject,
+      agentId: activeAgentId || 'agent_rag_general',
       messages: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -260,6 +302,112 @@ export default function ChatApp() {
     setConversations((prev) => [newConv, ...prev]);
     setActiveConvId(newId);
     saveConversationToDb(newConv);
+  };
+
+  const handleOpenCreateAgent = () => {
+    setEditingAgentId(null);
+    setAgentFormName('');
+    setAgentFormAvatar('🎓');
+    setAgentFormDesc('');
+    setAgentFormPrompt(`Você é um especialista em responder Fóruns Avaliativos Universitários e Discussões Acadêmicas.
+Sua missão é assumir a persona do estudante, escrevendo de forma reflexiva, humana, articulada e sem clichês de IA (evite "Em suma", "É imperioso destacar", "Como inteligência artificial", etc.).
+
+Estrutura recomendada para a resposta do Fórum:
+1. Posicionamento Inicial claro em relação ao tema proposto pelo professor.
+2. Desenvolvimento com argumentos sólidos fundamentados nos conceitos estudados [1], [2].
+3. Conclusão sintética com uma pergunta instigante convidando os colegas ao debate.`);
+    setAgentFormMateria('Qualquer');
+    setAgentFormCanConsult(true);
+    setIsEditingAgent(true);
+    setShowAgentsModal(true);
+  };
+
+  const handleOpenEditAgent = (ag: CustomAgent) => {
+    setEditingAgentId(ag.id);
+    setAgentFormName(ag.name);
+    setAgentFormAvatar(ag.avatar || '🤖');
+    setAgentFormDesc(ag.description || '');
+    setAgentFormPrompt(ag.systemPrompt || '');
+    setAgentFormMateria(ag.defaultMateria || 'Qualquer');
+    setAgentFormCanConsult(ag.canConsultTopics !== false);
+    setIsEditingAgent(true);
+    setShowAgentsModal(true);
+  };
+
+  const handleSaveAgent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!agentFormName.trim() || !agentFormPrompt.trim()) {
+      alert('Por favor, preencha o nome do agente e o Prompt do Sistema.');
+      return;
+    }
+
+    try {
+      if (editingAgentId) {
+        // Atualizar
+        const res = await fetch('/api/agents', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: editingAgentId,
+            name: agentFormName,
+            avatar: agentFormAvatar,
+            description: agentFormDesc,
+            systemPrompt: agentFormPrompt,
+            defaultMateria: agentFormMateria === 'Qualquer' ? null : agentFormMateria,
+            canConsultTopics: agentFormCanConsult,
+          }),
+        });
+        if (!res.ok) throw new Error('Erro ao salvar alterações do agente');
+      } else {
+        // Criar
+        const res = await fetch('/api/agents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: agentFormName,
+            avatar: agentFormAvatar,
+            description: agentFormDesc,
+            systemPrompt: agentFormPrompt,
+            defaultMateria: agentFormMateria === 'Qualquer' ? null : agentFormMateria,
+            canConsultTopics: agentFormCanConsult,
+          }),
+        });
+        const data = await res.json();
+        if (data.agent) {
+          setActiveAgentId(data.agent.id);
+          if (activeConversation) {
+            const updated = { ...activeConversation, agentId: data.agent.id };
+            setConversations((prev) => prev.map((c) => (c.id === updated.id ? updated : c)));
+            saveConversationToDb(updated);
+          }
+        }
+      }
+      await fetchAgents();
+      setIsEditingAgent(false);
+      setShowAgentsModal(false);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao salvar agente');
+    }
+  };
+
+  const handleDeleteAgent = async (id: string, name: string) => {
+    if (!confirm(`Deseja realmente excluir o agente "${name}"?`)) return;
+    try {
+      const res = await fetch(`/api/agents?id=${encodeURIComponent(id)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        if (activeAgentId === id) {
+          setActiveAgentId('agent_rag_general');
+        }
+        await fetchAgents();
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Erro ao excluir agente');
+      }
+    } catch (e) {
+      alert('Erro de conexão ao excluir agente');
+    }
   };
 
   const handleDeleteConversation = async (e: React.MouseEvent, convId: string) => {
@@ -319,6 +467,7 @@ export default function ChatApp() {
           messages: [...activeConversation.messages, userMsg],
           materia: activeSubject,
           webSearch: webSearchEnabled,
+          agentId: activeAgentId,
         }),
       });
 
@@ -400,6 +549,7 @@ export default function ChatApp() {
       const finalConv: Conversation = {
         ...activeConversation,
         title: newTitle,
+        agentId: activeAgentId,
         messages: activeConversation.messages
           .concat(userMsg)
           .concat({
@@ -785,6 +935,78 @@ export default function ChatApp() {
           </div>
 
           <div className="chat-header-actions">
+            {/* Agent Selector Dropdown */}
+            <div className="agent-selector-container">
+              <button
+                type="button"
+                className="agent-selector-btn"
+                onClick={() => setShowAgentDropdown(!showAgentDropdown)}
+                title="Trocar agente especialista ou persona desta conversa"
+              >
+                <span className="agent-btn-avatar">{currentAgent?.avatar || '🤖'}</span>
+                <span className="agent-btn-name">{currentAgent?.name || 'Assistente Geral'}</span>
+                <ChevronDown size={14} className={`agent-chevron ${showAgentDropdown ? 'open' : ''}`} />
+              </button>
+
+              {showAgentDropdown && (
+                <div className="agent-dropdown-menu">
+                  <div className="agent-dropdown-header">
+                    <span>Agente Especialista</span>
+                    <button
+                      type="button"
+                      className="btn-agent-manage"
+                      onClick={() => {
+                        setShowAgentDropdown(false);
+                        setIsEditingAgent(false);
+                        setShowAgentsModal(true);
+                      }}
+                    >
+                      Gerenciar
+                    </button>
+                  </div>
+                  <div className="agent-dropdown-list">
+                    {agents.map((ag) => (
+                      <div
+                        key={ag.id}
+                        className={`agent-dropdown-item ${ag.id === activeAgentId ? 'active' : ''}`}
+                        onClick={() => {
+                          setActiveAgentId(ag.id);
+                          setShowAgentDropdown(false);
+                          if (activeConversation) {
+                            const updated = { ...activeConversation, agentId: ag.id };
+                            setConversations((prev) =>
+                              prev.map((c) => (c.id === updated.id ? updated : c))
+                            );
+                            saveConversationToDb(updated);
+                          }
+                        }}
+                      >
+                        <span className="agent-list-avatar">{ag.avatar}</span>
+                        <div className="agent-list-info">
+                          <div className="agent-list-name">
+                            {ag.name}
+                            {ag.isBuiltIn && <span className="built-in-tag">Sistema</span>}
+                          </div>
+                          <div className="agent-list-desc">{ag.description}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="agent-dropdown-footer">
+                    <button
+                      type="button"
+                      className="btn-create-agent-quick"
+                      onClick={() => {
+                        setShowAgentDropdown(false);
+                        handleOpenCreateAgent();
+                      }}
+                    >
+                      <Plus size={14} /> Criar Novo Agente Especialista
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
             <button
               className="secondary-btn"
               onClick={() => setShowDocsModal(true)}
@@ -1191,6 +1413,258 @@ export default function ChatApp() {
                 Fechar
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Agents Management Modal */}
+      {showAgentsModal && (
+        <div className="modal-overlay" onClick={() => setShowAgentsModal(false)}>
+          <div
+            className="modal modal-large modal-agent-manager"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <h3>
+                  {isEditingAgent
+                    ? editingAgentId
+                      ? 'Editar Agente Especialista'
+                      : 'Criar Novo Agente Especialista'
+                    : 'Gerenciar Agentes Especialistas'}
+                </h3>
+                <p className="modal-subtitle">
+                  {isEditingAgent
+                    ? 'Configure o nome, persona, tom de voz, regras de redação e acesso a ferramentas.'
+                    : 'Escolha, personalize ou crie agentes com personas e regras de sistema exclusivas.'}
+                </p>
+              </div>
+              <button
+                className="close-btn"
+                onClick={() => setShowAgentsModal(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {!isEditingAgent ? (
+              // LIST VIEW
+              <div className="agent-cards-grid">
+                {agents.map((ag) => {
+                  const isCurrent = ag.id === activeAgentId;
+                  return (
+                    <div
+                      key={ag.id}
+                      className={`agent-manage-card ${isCurrent ? 'active' : ''}`}
+                    >
+                      <div className="agent-manage-main">
+                        <span className="agent-manage-avatar">{ag.avatar}</span>
+                        <div className="agent-manage-details">
+                          <div className="agent-manage-title">
+                            {ag.name}
+                            {isCurrent && (
+                              <span className="source-meta-tag source-page-tag">
+                                Ativo nesta conversa
+                              </span>
+                            )}
+                            {ag.isBuiltIn && (
+                              <span className="built-in-tag">Sistema</span>
+                            )}
+                          </div>
+                          <div className="agent-manage-desc">
+                            {ag.description || 'Sem descrição.'}
+                          </div>
+                          {ag.canConsultTopics && (
+                            <div className="agent-form-hint" style={{ marginTop: '0.35rem', color: '#c084fc' }}>
+                              ⚡ Consulta especialistas de matérias como ferramenta (Multi-Agent Tool)
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="agent-manage-actions">
+                        {!isCurrent && (
+                          <button
+                            type="button"
+                            className="btn-agent-action"
+                            onClick={() => {
+                              setActiveAgentId(ag.id);
+                              if (activeConversation) {
+                                const updated = { ...activeConversation, agentId: ag.id };
+                                setConversations((prev) =>
+                                  prev.map((c) => (c.id === updated.id ? updated : c))
+                                );
+                                saveConversationToDb(updated);
+                              }
+                              setShowAgentsModal(false);
+                            }}
+                            title="Usar este agente nesta conversa"
+                          >
+                            Selecionar
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="btn-agent-action"
+                          onClick={() => handleOpenEditAgent(ag)}
+                          title="Editar persona e regras deste agente"
+                        >
+                          <Pencil size={12} /> Editar
+                        </button>
+                        {!ag.isBuiltIn && (
+                          <button
+                            type="button"
+                            className="btn-agent-action delete"
+                            onClick={() => handleDeleteAgent(ag.id, ag.name)}
+                            title="Excluir agente"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              // FORM / EDITOR VIEW
+              <form className="agent-form" onSubmit={handleSaveAgent}>
+                <div className="agent-form-row">
+                  <div className="agent-form-group">
+                    <label className="agent-form-label">Emoji / Ícone</label>
+                    <input
+                      type="text"
+                      className="agent-form-input"
+                      style={{ textAlign: 'center', fontSize: '1.25rem' }}
+                      value={agentFormAvatar}
+                      onChange={(e) => setAgentFormAvatar(e.target.value)}
+                      maxLength={4}
+                    />
+                    <div className="agent-emoji-picker">
+                      {['🎓', '📝', '💡', '⚖️', '📐', '🤖', '🧪', '📊', '🔍', '⚡'].map(
+                        (emo) => (
+                          <button
+                            key={emo}
+                            type="button"
+                            className={`emoji-choice-btn ${agentFormAvatar === emo ? 'selected' : ''}`}
+                            onClick={() => setAgentFormAvatar(emo)}
+                          >
+                            {emo}
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="agent-form-group">
+                    <label className="agent-form-label">Nome do Agente Especialista</label>
+                    <input
+                      type="text"
+                      className="agent-form-input"
+                      placeholder="Ex: Especialista em Fóruns Avaliativos"
+                      value={agentFormName}
+                      onChange={(e) => setAgentFormName(e.target.value)}
+                      required
+                    />
+                    <span className="agent-form-hint">
+                      Dê um título que identifique claramente o propósito ou área de especialidade.
+                    </span>
+                  </div>
+                </div>
+
+                <div className="agent-form-group">
+                  <label className="agent-form-label">Descrição Resumida</label>
+                  <input
+                    type="text"
+                    className="agent-form-input"
+                    placeholder="Ex: Responde fóruns com persona de estudante, tom humano e estrutura em tópicos..."
+                    value={agentFormDesc}
+                    onChange={(e) => setAgentFormDesc(e.target.value)}
+                  />
+                </div>
+
+                <div className="agent-form-group">
+                  <label className="agent-form-label">
+                    Prompt do Sistema (Persona, Tom de Voz, Regras & Template)
+                  </label>
+                  <span className="agent-form-hint">
+                    Defina como este agente deve pensar, escrever, formatar as respostas (ex: introdução, desenvolvimento e encerramento para fóruns) e quais clichês evitar.
+                  </span>
+                  <textarea
+                    className="agent-form-textarea"
+                    value={agentFormPrompt}
+                    onChange={(e) => setAgentFormPrompt(e.target.value)}
+                    rows={8}
+                    required
+                  />
+                </div>
+
+                <div className="agent-form-group">
+                  <label className="agent-form-label">Tópico / Matéria Vinculada</label>
+                  <select
+                    className="agent-form-select"
+                    value={agentFormMateria}
+                    onChange={(e) => setAgentFormMateria(e.target.value)}
+                  >
+                    <option value="Qualquer">Qualquer Tópico (Dinâmico / Consulta múltiplos)</option>
+                    {subjects.filter((s) => s !== 'Geral').map((sub) => (
+                      <option key={sub} value={sub}>{sub}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div
+                  className="agent-checkbox-card"
+                  onClick={() => setAgentFormCanConsult(!agentFormCanConsult)}
+                >
+                  <input
+                    type="checkbox"
+                    checked={agentFormCanConsult}
+                    onChange={(e) => setAgentFormCanConsult(e.target.checked)}
+                  />
+                  <div className="agent-checkbox-text">
+                    <span className="agent-checkbox-title">
+                      Permitir consultar especialistas de matérias como ferramenta (Multi-Agent Tool)
+                    </span>
+                    <span className="agent-checkbox-desc">
+                      Se ativado, quando o fórum ou dúvida envolver uma matéria específica (ex: Matemática, Direito), este agente invocará o especialista da matéria no acervo, recolherá os dados técnicos e usará sua persona para redigir a resposta final.
+                    </span>
+                  </div>
+                </div>
+
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn-cancel"
+                    onClick={() => setIsEditingAgent(false)}
+                  >
+                    Voltar
+                  </button>
+                  <button type="submit" className="btn-submit">
+                    Salvar Agente
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {!isEditingAgent && (
+              <div className="modal-actions space-between">
+                <button
+                  type="button"
+                  className="btn-submit"
+                  onClick={handleOpenCreateAgent}
+                >
+                  <Plus size={16} /> Criar Novo Agente Especialista
+                </button>
+                <button
+                  type="button"
+                  className="btn-cancel"
+                  onClick={() => setShowAgentsModal(false)}
+                >
+                  Fechar
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Ollama } from '@langchain/community/llms/ollama';
-import { ensureVectorIndex } from '@/lib/mongodb';
+import clientPromise, { ensureVectorIndex } from '@/lib/mongodb';
 import { PromptTemplate } from '@langchain/core/prompts';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { searchWeb, detectWebSearchIntent } from '@/lib/tools/webSearch';
 import { runIntelligentRAG } from '@/lib/rag/subagent';
+import { CustomAgent } from '@/lib/agents/types';
+import { DEFAULT_AGENTS } from '@/lib/agents/defaultAgents';
 
 export type ChatSource = {
   id: string;
@@ -24,7 +26,7 @@ export type ChatSource = {
 export async function POST(req: NextRequest) {
   try {
     await ensureVectorIndex();
-    const { messages, materia, webSearch } = await req.json();
+    const { messages, materia, webSearch, agentId } = await req.json();
 
     if (!messages || messages.length === 0) {
       return NextResponse.json({ error: 'Nenhuma mensagem fornecida' }, { status: 400 });
@@ -37,7 +39,32 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Tópico não fornecido' }, { status: 400 });
     }
 
-    const isGlobal = materia === 'Geral';
+    const client = await clientPromise;
+    const db = client.db('ragchat');
+
+    // Recupera o agente selecionado para a conversa
+    let activeAgent: CustomAgent | null = null;
+    if (agentId) {
+      activeAgent = await db.collection<CustomAgent>('agents').findOne({ id: agentId });
+    }
+    if (!activeAgent) {
+      activeAgent = DEFAULT_AGENTS[0];
+    }
+
+    // Identifica se uma matéria específica deve ser consultada pelo agente como ferramenta
+    let consultMateria = materia;
+    if (materia === 'Geral' && activeAgent.canConsultTopics) {
+      const subjectsInDb = await db.collection('documents').distinct('materia');
+      const lowerQuery = currentMessageContent.toLowerCase();
+      const matched = subjectsInDb.find(
+        (s) => s && s !== 'Geral' && lowerQuery.includes(s.toLowerCase())
+      );
+      if (matched) {
+        consultMateria = matched;
+      }
+    }
+
+    const isGlobal = consultMateria === 'Geral';
     const shouldSearchWeb = Boolean(webSearch) || detectWebSearchIntent(currentMessageContent);
 
     const encoder = new TextEncoder();
@@ -52,11 +79,20 @@ export async function POST(req: NextRequest) {
             } catch (e) {}
           };
 
-          // 1. Subagente Inteligente de RAG (Análise de Intenção, Expansão, Busca Híbrida e Avaliação de Relevância)
-          sendStatus('🔍 Analisando pergunta e identificando termos no acervo...');
+          // 1. Interação e consulta ao Especialista da Matéria como ferramenta
+          if (activeAgent && activeAgent.id !== 'agent_rag_general') {
+            sendStatus(`${activeAgent.avatar || '🤖'} [${activeAgent.name}] Analisando solicitação e ativando persona...`);
+          }
+
+          if (consultMateria !== 'Geral') {
+            sendStatus(`🔍 [${activeAgent?.name || 'Agente'}] Consultando especialista na matéria "${consultMateria}" como ferramenta...`);
+          } else {
+            sendStatus(`🔍 [${activeAgent?.name || 'Agente'}] Consultando acervo geral de documentos...`);
+          }
+
           const ragResult = await runIntelligentRAG(
             currentMessageContent,
-            materia,
+            consultMateria,
             sendStatus,
             previousMessages.slice(-4)
           );
@@ -162,7 +198,7 @@ export async function POST(req: NextRequest) {
 
           let scopeDescription = isGlobal
             ? 'em todos os tópicos cadastrados no acervo global'
-            : `no tópico "${materia}"`;
+            : `na matéria "${consultMateria}"`;
 
           if (shouldSearchWeb) {
             scopeDescription += ' e com acesso a pesquisas na Web em tempo real';
@@ -179,22 +215,26 @@ Novo assunto atual em foco: "${ragResult.expansion.assuntoAtual || currentMessag
 Responda EXCLUSIVAMENTE sobre o novo assunto solicitado. NUNCA misture nem responda com elementos do assunto anterior da conversa.\n`
             : '';
 
+          const agentPromptTemplate = activeAgent.systemPrompt || DEFAULT_AGENTS[0].systemPrompt;
+
           const prompt = PromptTemplate.fromTemplate(`
-Você é um assistente técnico e acadêmico especializado {scopeDescription}.
-Seu objetivo é ajudar o usuário com respostas precisas, claras e estritamente fundamentadas nas fontes consultadas.
+${agentPromptTemplate}
 
 {technicalTermHint}
 {topicTransitionHint}
 
-Instruções fundamentais:
-- Responda DIRETAMENTE à pergunta atual do usuário utilizando as fontes fornecidas.
-- Se o usuário mudou de assunto, foque 100% no novo assunto e ignore temas antigos da conversa.
+CONSULTA TÉCNICA AO ESPECIALISTA DA MATÉRIA ("{consultMateria}"):
+Abaixo estão os trechos e fontes oficiais levantados pelo especialista no acervo documental:
+---
+{context}
+---
+
+DIRETRIZES DE EXECUÇÃO:
+- Assuma integralmente a sua persona, tom de voz e regras descritas no seu prompt acima.
+- Utilize com rigor os dados e orientações fornecidos pelo especialista na "CONSULTA TÉCNICA" para fundamentar a resposta.
 - Ao citar fatos, procedimentos ou dados das fontes, inclua a referência numérica entre colchetes como [1], [2] ao final da frase correspondente.
 - NUNCA invente informações não presentes nas fontes ou no histórico.
-- NUNCA inicie sua resposta com títulos como "Resposta:", "**Resposta:**", "Resposta" ou repetindo a pergunta. Comece diretamente explicando.
-
-Contexto das Fontes Consultadas:
-{context}
+- NUNCA inicie sua resposta com títulos como "Resposta:", "**Resposta:**", "Resposta" ou repetindo a pergunta. Comece diretamente com a sua resposta.
 
 {chatHistory}
 Mensagem atual do Usuário:
@@ -211,6 +251,7 @@ Mensagem atual do Usuário:
             context: contextString,
             chatHistory: chatHistoryBlock,
             question: currentMessageContent,
+            consultMateria,
             scopeDescription,
             technicalTermHint,
             topicTransitionHint,

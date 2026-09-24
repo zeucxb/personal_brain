@@ -26,7 +26,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const { id, title, materia, messages } = await req.json();
+    const { id, title, materia, messages, agentId } = await req.json();
 
     if (!id || !materia) {
       return NextResponse.json(
@@ -48,6 +48,7 @@ export async function POST(req: NextRequest) {
           title: title || 'Nova conversa',
           materia,
           messages: messages || [],
+          agentId: agentId || 'agent_rag_general',
           updatedAt: now,
         },
         $setOnInsert: {
