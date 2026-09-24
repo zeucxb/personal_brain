@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { FileText, UploadCloud, Trash2, Plus, X, BookOpen, Layers } from 'lucide-react';
 
 type Message = {
   id: string;
@@ -10,29 +11,56 @@ type Message = {
   content: string;
 };
 
+type DocItem = {
+  filename: string;
+  materia: string;
+  chunksCount: number;
+};
+
 export default function ChatApp() {
   const [subjects, setSubjects] = useState<string[]>(['Geral']);
   const [activeSubject, setActiveSubject] = useState<string>('Geral');
+  const [documents, setDocuments] = useState<DocItem[]>([]);
   const [messages, setMessages] = useState<Record<string, Message[]>>({});
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  
-  // Modal state
-  const [showModal, setShowModal] = useState(false);
+
+  // Modals state
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [showDocsModal, setShowDocsModal] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
+  const [deletingDoc, setDeletingDoc] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const fetchSubjects = async () => {
+    try {
+      const res = await fetch('/api/subjects');
+      const data = await res.json();
+      if (data.subjects && data.subjects.length > 0) {
+        setSubjects((prev) => Array.from(new Set([...prev, ...data.subjects])));
+      }
+    } catch (e) {
+      console.error('Error fetching subjects:', e);
+    }
+  };
+
+  const fetchDocuments = async () => {
+    try {
+      const res = await fetch('/api/documents');
+      const data = await res.json();
+      if (data.documents) {
+        setDocuments(data.documents);
+      }
+    } catch (e) {
+      console.error('Error fetching documents:', e);
+    }
+  };
+
   useEffect(() => {
-    fetch('/api/subjects')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data.subjects && data.subjects.length > 0) {
-          setSubjects((prev) => Array.from(new Set([...prev, ...data.subjects])));
-        }
-      })
-      .catch(console.error);
+    fetchSubjects();
+    fetchDocuments();
   }, []);
 
   useEffect(() => {
@@ -45,7 +73,7 @@ export default function ChatApp() {
 
     const userMsg: Message = { id: Date.now().toString(), role: 'user', content: input };
     const subjectMessages = messages[activeSubject] || [];
-    
+
     setMessages({
       ...messages,
       [activeSubject]: [...subjectMessages, userMsg],
@@ -103,7 +131,7 @@ export default function ChatApp() {
   const handleUpload = async () => {
     if (!file) return;
     setUploading(true);
-    
+
     const formData = new FormData();
     formData.append('file', file);
     formData.append('materia', activeSubject);
@@ -113,72 +141,185 @@ export default function ChatApp() {
         method: 'POST',
         body: formData,
       });
+      const data = await res.json();
       if (res.ok) {
-        alert('Documento indexado com sucesso!');
-        setShowModal(false);
+        setShowUploadModal(false);
         setFile(null);
+        await fetchDocuments();
+        await fetchSubjects();
+        alert(`Sucesso! Documento fatiado em ${data.chunks} chunks e indexado com embeddings.`);
       } else {
-        alert('Erro ao indexar documento.');
+        alert(data.error || 'Erro ao indexar documento.');
       }
     } catch (e) {
       console.error(e);
-      alert('Erro no servidor.');
+      alert('Erro no servidor ao processar o PDF.');
     } finally {
       setUploading(false);
     }
   };
 
+  const handleDeleteDocument = async (filename: string, materia: string) => {
+    if (
+      !confirm(
+        `Tem certeza que deseja excluir o documento "${filename}" da matéria "${materia}"?\nOs dados vetoriais serão removidos.`
+      )
+    ) {
+      return;
+    }
+
+    setDeletingDoc(filename);
+    try {
+      const res = await fetch('/api/documents', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ materia, filename }),
+      });
+      if (res.ok) {
+        await fetchDocuments();
+        await fetchSubjects();
+      } else {
+        alert('Erro ao excluir documento.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Erro ao conectar ao servidor para exclusão.');
+    } finally {
+      setDeletingDoc(null);
+    }
+  };
+
+  const handleDeleteSubject = async (e: React.MouseEvent, sub: string) => {
+    e.stopPropagation();
+    if (
+      !confirm(
+        `Deseja excluir a matéria "${sub}" e todos os seus documentos indexados?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await fetch('/api/subjects', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ materia: sub }),
+      });
+      setSubjects((prev) => prev.filter((s) => s !== sub));
+      if (activeSubject === sub) {
+        setActiveSubject('Geral');
+      }
+      await fetchDocuments();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const currentMessages = messages[activeSubject] || [];
+  const currentSubjectDocs = documents.filter((d) => d.materia === activeSubject);
 
   return (
     <div className="app-container">
       {/* Sidebar */}
       <aside className="sidebar">
-        <h1>📚 Matérias</h1>
+        <h1>
+          <BookOpen size={22} className="logo-icon" />
+          <span>RAG Chat</span>
+        </h1>
+
+        <div className="sidebar-section-title">Matérias</div>
         <div className="subject-list">
-          {subjects.map((sub) => (
-            <div
-              key={sub}
-              className={`subject-item ${activeSubject === sub ? 'active' : ''}`}
-              onClick={() => setActiveSubject(sub)}
-            >
-              {sub}
-            </div>
-          ))}
+          {subjects.map((sub) => {
+            const count = documents.filter((d) => d.materia === sub).length;
+            return (
+              <div
+                key={sub}
+                className={`subject-item ${activeSubject === sub ? 'active' : ''}`}
+                onClick={() => setActiveSubject(sub)}
+              >
+                <div className="subject-name-wrapper">
+                  <span className="subject-name">{sub}</span>
+                  {count > 0 && <span className="doc-badge">{count} PDF{count > 1 ? 's' : ''}</span>}
+                </div>
+                {sub !== 'Geral' && (
+                  <button
+                    className="subject-delete-btn"
+                    title={`Excluir matéria ${sub}`}
+                    onClick={(e) => handleDeleteSubject(e, sub)}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
-        <button 
+
+        <button
           className="new-subject-btn"
           onClick={() => {
             const name = prompt('Nome da nova matéria:');
-            if (name && !subjects.includes(name)) {
-              setSubjects([...subjects, name]);
-              setActiveSubject(name);
+            if (name && !subjects.includes(name.trim())) {
+              const cleanName = name.trim();
+              setSubjects([...subjects, cleanName]);
+              setActiveSubject(cleanName);
             }
           }}
         >
-          + Nova Matéria
+          <Plus size={16} />
+          Nova Matéria
         </button>
       </aside>
 
       {/* Main Chat Area */}
       <main className="chat-area">
         <header className="chat-header">
-          <h2>{activeSubject}</h2>
-          <button className="upload-btn" onClick={() => setShowModal(true)}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-              <polyline points="17 8 12 3 7 8"></polyline>
-              <line x1="12" y1="3" x2="12" y2="15"></line>
-            </svg>
-            Upload PDF
-          </button>
+          <div>
+            <h2>{activeSubject}</h2>
+            <p className="subject-meta">
+              {currentSubjectDocs.length === 0
+                ? 'Nenhum documento anexado'
+                : `${currentSubjectDocs.length} documento(s) indexado(s)`}
+            </p>
+          </div>
+
+          <div className="chat-header-actions">
+            <button
+              className="secondary-btn"
+              onClick={() => setShowDocsModal(true)}
+              title="Gerenciar documentos da matéria"
+            >
+              <FileText size={16} />
+              <span>Documentos ({currentSubjectDocs.length})</span>
+            </button>
+
+            <button className="upload-btn" onClick={() => setShowUploadModal(true)}>
+              <UploadCloud size={16} />
+              <span>Upload PDF</span>
+            </button>
+          </div>
         </header>
 
         <div className="messages">
           {currentMessages.length === 0 ? (
-            <div style={{ textAlign: 'center', color: 'var(--text-muted)', marginTop: '2rem' }}>
-              Faça uma pergunta sobre <strong>{activeSubject}</strong>. <br/>
-              Lembre-se de fazer upload dos PDFs para dar contexto!
+            <div className="empty-chat-placeholder">
+              <div className="placeholder-icon">
+                <Layers size={36} />
+              </div>
+              <h3>Conversar sobre {activeSubject}</h3>
+              <p>
+                {currentSubjectDocs.length === 0 ? (
+                  <>
+                    Esta matéria ainda não possui documentos indexados.<br />
+                    Clique em <strong>Upload PDF</strong> para adicionar o material de estudo.
+                  </>
+                ) : (
+                  <>
+                    Esta matéria possui <strong>{currentSubjectDocs.length}</strong> documento(s) com busca vetorial ativa.<br />
+                    Faça uma pergunta sobre o conteúdo para o Llama 3 responder com base nas fontes!
+                  </>
+                )}
+              </p>
             </div>
           ) : (
             currentMessages.map((msg) => (
@@ -223,22 +364,135 @@ export default function ChatApp() {
       </main>
 
       {/* Upload Modal */}
-      {showModal && (
-        <div className="modal-overlay">
-          <div className="modal">
-            <h3>Upload de PDF para {activeSubject}</h3>
-            <input 
-              type="file" 
-              accept=".pdf" 
+      {showUploadModal && (
+        <div className="modal-overlay" onClick={() => !uploading && setShowUploadModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Upload de PDF para "{activeSubject}"</h3>
+              <button
+                className="close-btn"
+                onClick={() => setShowUploadModal(false)}
+                disabled={uploading}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <p className="modal-description">
+              O arquivo será fatiado em blocos contextuais com sobreposição e vetorizado via Ollama.
+            </p>
+
+            <input
+              type="file"
+              accept=".pdf"
               className="file-input"
               onChange={(e) => setFile(e.target.files?.[0] || null)}
             />
+
             <div className="modal-actions">
-              <button className="btn-cancel" onClick={() => setShowModal(false)} disabled={uploading}>
+              <button
+                className="btn-cancel"
+                onClick={() => setShowUploadModal(false)}
+                disabled={uploading}
+              >
                 Cancelar
               </button>
-              <button className="btn-submit" onClick={handleUpload} disabled={uploading || !file}>
-                {uploading ? 'Indexando...' : 'Fazer Upload'}
+              <button
+                className="btn-submit"
+                onClick={handleUpload}
+                disabled={uploading || !file}
+              >
+                {uploading ? (
+                  <>
+                    <span className="loader"></span> Vetorizando...
+                  </>
+                ) : (
+                  'Fazer Upload e Vetorizar'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Documents Management Modal */}
+      {showDocsModal && (
+        <div className="modal-overlay" onClick={() => setShowDocsModal(false)}>
+          <div className="modal modal-large" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h3>Documentos de {activeSubject}</h3>
+                <p className="modal-subtitle">
+                  {currentSubjectDocs.length} arquivo(s) salvos no MongoDB com busca vetorial
+                </p>
+              </div>
+              <button className="close-btn" onClick={() => setShowDocsModal(false)}>
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="doc-list-container">
+              {currentSubjectDocs.length === 0 ? (
+                <div className="doc-list-empty">
+                  <FileText size={40} className="empty-icon" />
+                  <p>Nenhum documento cadastrado nesta matéria.</p>
+                  <button
+                    className="btn-submit small-btn"
+                    onClick={() => {
+                      setShowDocsModal(false);
+                      setShowUploadModal(true);
+                    }}
+                  >
+                    Fazer Upload Agora
+                  </button>
+                </div>
+              ) : (
+                currentSubjectDocs.map((doc) => (
+                  <div key={doc.filename} className="doc-item">
+                    <div className="doc-info">
+                      <FileText size={20} className="doc-file-icon" />
+                      <div className="doc-details">
+                        <span className="doc-name" title={doc.filename}>
+                          {doc.filename}
+                        </span>
+                        <span className="doc-chunks">
+                          {doc.chunksCount} chunks indexados
+                        </span>
+                      </div>
+                    </div>
+
+                    <button
+                      className="btn-delete-doc"
+                      title="Excluir documento do banco vetorial"
+                      disabled={deletingDoc === doc.filename}
+                      onClick={() => handleDeleteDocument(doc.filename, doc.materia)}
+                    >
+                      {deletingDoc === doc.filename ? (
+                        <span className="loader small-loader"></span>
+                      ) : (
+                        <>
+                          <Trash2 size={15} />
+                          <span>Excluir</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="modal-actions space-between">
+              <button
+                className="upload-btn"
+                onClick={() => {
+                  setShowDocsModal(false);
+                  setShowUploadModal(true);
+                }}
+              >
+                <Plus size={16} /> Adicionar Novo PDF
+              </button>
+              <button className="btn-cancel" onClick={() => setShowDocsModal(false)}>
+                Fechar
               </button>
             </div>
           </div>
