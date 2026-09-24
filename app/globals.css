@@ -1189,5 +1189,41 @@ body {
   font-style: normal;
 }
 
+/* Inline Clickable Citations in Markdown (Perplexity Style) */
+.inline-citation {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.14);
+  border: 1px solid rgba(59, 130, 246, 0.32);
+  border-radius: 0.35rem;
+  padding: 0.12rem 0.38rem;
+  margin: 0 0.18rem;
+  cursor: pointer;
+  text-decoration: none;
+  vertical-align: baseline;
+  position: relative;
+  top: -0.15em;
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  user-select: none;
+}
+
+.inline-citation:hover {
+  background: rgba(59, 130, 246, 0.28);
+  border-color: #3b82f6;
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 0 10px rgba(59, 130, 246, 0.45);
+}
+
+.inline-citation:active {
+  transform: translateY(0);
+}
+
 
 

@@ -14,26 +14,55 @@ export type ChatSource = {
   materia?: string;
 };
 
-interface SourcesListProps {
+export interface SourcesListProps {
   sources?: ChatSource[];
+  selectedSource?: ChatSource | null;
+  onSelectSource?: (source: ChatSource | null) => void;
 }
 
-export default function SourcesList({ sources }: SourcesListProps) {
-  const [selectedSource, setSelectedSource] = useState<ChatSource | null>(null);
+/**
+ * Transforms numerical citations like [1], [2], [1, 2] in Markdown text into
+ * [1](citation:1) links so that ReactMarkdown can render them as interactive clickable badges.
+ */
+export function linkifyCitations(text: string): string {
+  if (!text) return '';
+  // Split grouped citations like [1, 2] or [1, 2, 3] into individual citations [1] [2]
+  let cleaned = text.replace(/\[(\d+(?:\s*,\s*\d+)+)\]/g, (_, nums) => {
+    return nums
+      .split(',')
+      .map((n: string) => `[${n.trim()}]`)
+      .join(' ');
+  });
+  // Replace [1] with [1](citation:1), ignoring existing markdown links [name](url)
+  return cleaned.replace(/\[(\d+)\](?!\()/g, (_, num) => `[${num}](citation:${num})`);
+}
 
-  if (!sources || sources.length === 0) return null;
+export default function SourcesList({
+  sources,
+  selectedSource: controlledSelectedSource,
+  onSelectSource: controlledOnSelectSource,
+}: SourcesListProps) {
+  const [internalSelectedSource, setInternalSelectedSource] = useState<ChatSource | null>(null);
+
+  const selectedSource =
+    controlledSelectedSource !== undefined ? controlledSelectedSource : internalSelectedSource;
+  const setSelectedSource = controlledOnSelectSource || setInternalSelectedSource;
+
+  if ((!sources || sources.length === 0) && !selectedSource) return null;
 
   return (
-    <div className="sources-container">
-      <div className="sources-header">
-        <span className="sources-title">
-          <BookOpen size={14} className="sources-icon" /> Fontes consultadas ({sources.length})
-        </span>
-      </div>
+    <>
+      {sources && sources.length > 0 && (
+        <div className="sources-container">
+          <div className="sources-header">
+            <span className="sources-title">
+              <BookOpen size={14} className="sources-icon" /> Fontes consultadas ({sources.length})
+            </span>
+          </div>
 
-      <div className="sources-grid">
-        {sources.map((src) => {
-          const isDoc = src.type === 'document';
+          <div className="sources-grid">
+            {sources.map((src) => {
+              const isDoc = src.type === 'document';
           return (
             <div
               key={src.id || src.index}
@@ -78,9 +107,11 @@ export default function SourcesList({ sources }: SourcesListProps) {
                 )}
               </div>
             </div>
-          );
-        })}
-      </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Snippet Inspection Modal */}
       {selectedSource && (
@@ -138,6 +169,6 @@ export default function SourcesList({ sources }: SourcesListProps) {
           </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

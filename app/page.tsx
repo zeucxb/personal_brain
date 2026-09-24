@@ -16,7 +16,7 @@ import {
   ExternalLink,
 } from 'lucide-react';
 
-import SourcesList, { ChatSource } from './components/SourcesList';
+import SourcesList, { ChatSource, linkifyCitations } from './components/SourcesList';
 
 type Message = {
   id: string;
@@ -46,6 +46,79 @@ function cleanAiResponse(text: string): string {
   res = res.replace(/^(\*{1,3}|#{1,4}\s*)?Pergunta:[^\n]*(\*{1,3})?\s*(\n+)?/i, '');
   res = res.replace(/^(\*{1,3}|#{1,4}\s*)?Resposta:?(\*{1,3})?:?\s*(\n+)?/i, '');
   return res.trimStart();
+}
+
+function AssistantMessage({
+  content,
+  sources,
+}: {
+  content: string;
+  sources?: ChatSource[];
+}) {
+  const [selectedSource, setSelectedSource] = useState<ChatSource | null>(null);
+
+  const cleanContent = cleanAiResponse(content);
+  const processedContent = linkifyCitations(cleanContent);
+
+  return (
+    <>
+      {sources && sources.length > 0 && (
+        <SourcesList
+          sources={sources}
+          selectedSource={selectedSource}
+          onSelectSource={setSelectedSource}
+        />
+      )}
+      {content ? (
+        <div className="markdown-content">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              a: ({ href, children }) => {
+                if (href && href.startsWith('citation:')) {
+                  const citationIndex = parseInt(href.replace('citation:', ''), 10);
+                  const matchedSource = sources?.find((s) => s.index === citationIndex);
+                  return (
+                    <button
+                      type="button"
+                      className="inline-citation"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (matchedSource) {
+                          setSelectedSource(matchedSource);
+                        }
+                      }}
+                      title={
+                        matchedSource
+                          ? `Ver fonte [${citationIndex}]: ${matchedSource.title}`
+                          : `Fonte [${citationIndex}]`
+                      }
+                    >
+                      [{citationIndex}]
+                    </button>
+                  );
+                }
+                return (
+                  <a href={href} target="_blank" rel="noreferrer">
+                    {children}
+                  </a>
+                );
+              },
+            }}
+          >
+            {processedContent}
+          </ReactMarkdown>
+        </div>
+      ) : (
+        <div className="typing-indicator">
+          <span></span>
+          <span></span>
+          <span></span>
+        </div>
+      )}
+    </>
+  );
 }
 
 export default function ChatApp() {
@@ -618,24 +691,7 @@ export default function ChatApp() {
             currentMessages.map((msg) => (
               <div key={msg.id} className={`message ${msg.role}`}>
                 {msg.role === 'assistant' ? (
-                  <>
-                    {msg.sources && msg.sources.length > 0 && (
-                      <SourcesList sources={msg.sources} />
-                    )}
-                    {msg.content ? (
-                      <div className="markdown-content">
-                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                          {cleanAiResponse(msg.content)}
-                        </ReactMarkdown>
-                      </div>
-                    ) : (
-                      <div className="typing-indicator">
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                      </div>
-                    )}
-                  </>
+                  <AssistantMessage content={msg.content} sources={msg.sources} />
                 ) : (
                   msg.content
                 )}
