@@ -341,7 +341,50 @@ body {
   outline: none;
 }
 
-.input-box button {
+.btn-web-toggle {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid var(--panel-border) !important;
+  color: var(--text-muted) !important;
+  padding: 0.5rem 0.85rem !important;
+  border-radius: 0.75rem !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 0.45rem !important;
+  font-size: 0.82rem !important;
+  font-weight: 600 !important;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.btn-web-toggle:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: var(--text-main) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+}
+
+.btn-web-toggle.active {
+  background: rgba(16, 185, 129, 0.15) !important;
+  border-color: rgba(16, 185, 129, 0.5) !important;
+  color: #34d399 !important;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.2) !important;
+}
+
+.btn-web-toggle.active .web-indicator-dot {
+  background: #34d399;
+  box-shadow: 0 0 6px #34d399;
+}
+
+.web-indicator-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: all 0.2s ease;
+}
+
+.input-box .btn-send {
   background-color: var(--accent);
   color: #fff;
   border: none;
@@ -350,10 +393,16 @@ body {
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.2s ease;
+  white-space: nowrap;
 }
 
-.input-box button:hover {
+.input-box .btn-send:hover {
   background-color: var(--accent-hover);
+}
+
+.input-box .btn-send:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Modal de Upload */

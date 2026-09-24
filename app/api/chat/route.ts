@@ -6,6 +6,7 @@ import clientPromise, { ensureVectorIndex } from '@/lib/mongodb';
 import { PromptTemplate } from '@langchain/core/prompts';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
+import { searchWeb, detectWebSearchIntent } from '@/lib/tools/webSearch';
 
 export type ChatSource = {
   id: string;
@@ -21,7 +22,7 @@ export type ChatSource = {
 export async function POST(req: NextRequest) {
   try {
     await ensureVectorIndex();
-    const { messages, materia } = await req.json();
+    const { messages, materia, webSearch } = await req.json();
     const currentMessageContent = messages[messages.length - 1].content;
 
     if (!materia) {
@@ -29,6 +30,7 @@ export async function POST(req: NextRequest) {
     }
 
     const isGlobal = materia === 'Geral';
+    const shouldSearchWeb = Boolean(webSearch) || detectWebSearchIntent(currentMessageContent);
 
     const client = await clientPromise;
     const db = client.db('ragchat');
@@ -48,7 +50,7 @@ export async function POST(req: NextRequest) {
 
     const retriever = vectorStore.asRetriever({
       filter: isGlobal ? undefined : { preFilter: { materia: { $eq: materia } } },
-      k: 5,
+      k: 4,
     });
 
     // 1. Retrieve documents from Vector Store
@@ -63,6 +65,7 @@ export async function POST(req: NextRequest) {
     const sources: ChatSource[] = [];
     const seen = new Set<string>();
 
+    // 2a. Add document sources
     retrievedDocs.forEach((doc) => {
       const srcName = doc.metadata?.source || doc.source || 'Documento';
       const docMateria = doc.metadata?.materia || doc.materia || materia;
@@ -74,7 +77,7 @@ export async function POST(req: NextRequest) {
         seen.add(key);
         const index = sources.length + 1;
         sources.push({
-          id: `src-${index}`,
+          id: `doc-${index}`,
           index,
           type: 'document',
           title: srcName,
@@ -85,16 +88,44 @@ export async function POST(req: NextRequest) {
       }
     });
 
+    // 2b. Add Web Search sources if enabled or detected
+    if (shouldSearchWeb) {
+      try {
+        const webResults = await searchWeb(currentMessageContent, 4);
+        webResults.forEach((item) => {
+          const key = `web-${item.url}`;
+          if (!seen.has(key) && item.snippet.length > 0) {
+            seen.add(key);
+            const index = sources.length + 1;
+            sources.push({
+              id: `web-${index}`,
+              index,
+              type: 'web',
+              title: item.title,
+              source: item.source,
+              url: item.url,
+              snippet: item.snippet.length > 350 ? item.snippet.slice(0, 350) + '...' : item.snippet,
+              materia: 'Web',
+            });
+          }
+        });
+      } catch (webErr) {
+        console.warn('Web search failed or timed out:', webErr);
+      }
+    }
+
     // 3. Format context string with [1], [2] labels for LLM grounding
     const contextString =
       sources.length > 0
         ? sources
-            .map(
-              (s) =>
-                `[${s.index}] Documento: ${s.title} (Matéria: ${s.materia})\nConteúdo: ${s.snippet}`
-            )
+            .map((s) => {
+              if (s.type === 'web') {
+                return `[${s.index}] Fonte Web: ${s.title} (Origem: ${s.source} | URL: ${s.url})\nConteúdo: ${s.snippet}`;
+              }
+              return `[${s.index}] Documento: ${s.title} (Matéria: ${s.materia})\nConteúdo: ${s.snippet}`;
+            })
             .join('\n\n---\n\n')
-        : 'Nenhum documento encontrado.';
+        : 'Nenhum documento ou fonte web relevante encontrada.';
 
     // 4. Setup Ollama LLM
     const llm = new Ollama({
@@ -102,21 +133,25 @@ export async function POST(req: NextRequest) {
       baseUrl: 'http://localhost:11434',
     });
 
-    const scopeDescription = isGlobal
+    let scopeDescription = isGlobal
       ? 'em todas as matérias cadastradas no acervo global'
       : `na matéria "${materia}"`;
 
+    if (shouldSearchWeb) {
+      scopeDescription += ' e com acesso a pesquisas na Web em tempo real';
+    }
+
     const prompt = PromptTemplate.fromTemplate(`
 Você é um assistente acadêmico especializado {scopeDescription}.
-Responda à pergunta do usuário baseando-se no contexto extraído dos documentos abaixo. Se não houver contexto suficiente ou nenhum documento relevante, informe educadamente que ainda não há documentos sobre o assunto cadastrados.
-Seja claro, educado e use formatação Markdown quando necessário.
+Responda à pergunta do usuário baseando-se no contexto das fontes abaixo (documentos do acervo e/ou resultados da Web). Se não houver contexto suficiente ou nenhuma fonte relevante, informe educadamente que ainda não há informações cadastradas sobre o assunto.
+Seja claro, objetivo, educado e use formatação Markdown quando necessário.
 
 Diretriz de citação de fontes (estilo Perplexity):
-Ao mencionar fatos ou informações extraídas dos documentos, cite a referência numérica entre colchetes como [1], [2] ao final da frase correspondente.
+Ao mencionar fatos, dados ou informações extraídas das fontes (documentos ou web), cite a referência numérica entre colchetes como [1], [2] ao final da frase correspondente.
 
 Diretriz de formatação: Vá direto à explicação. NUNCA inicie sua resposta com títulos como "Resposta:", "**Resposta:**", "Resposta" ou repetindo a pergunta. Comece diretamente respondendo.
 
-Contexto dos Documentos:
+Contexto das Fontes:
 {context}
 
 Pergunta:

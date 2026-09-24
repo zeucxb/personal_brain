@@ -56,6 +56,7 @@ export default function ChatApp() {
 
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
 
   // Modals state
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -220,6 +221,7 @@ export default function ChatApp() {
         body: JSON.stringify({
           messages: [...activeConversation.messages, userMsg],
           materia: activeSubject,
+          webSearch: webSearchEnabled,
         }),
       });
 
@@ -601,12 +603,12 @@ export default function ChatApp() {
                 ) : currentSubjectDocs.length === 0 ? (
                   <>
                     Esta matéria ainda não possui documentos indexados.<br />
-                    Clique em <strong>Upload PDF</strong> acima para anexar suas apostilas.
+                    Você pode clicar em <strong>Upload PDF</strong> para anexar apostilas ou ativar o botão <strong>🌐 Web</strong> abaixo para pesquisar na internet!
                   </>
                 ) : (
                   <>
                     Esta matéria possui <strong>{currentSubjectDocs.length}</strong> documento(s) com busca vetorial ativa.<br />
-                    Faça uma pergunta sobre o conteúdo para o Llama 3 responder com base nas fontes!
+                    Faça uma pergunta sobre o conteúdo para o Llama 3 responder com base nas fontes (ou ative <strong>🌐 Web</strong> para complementar com a internet)!
                   </>
                 )}
               </p>
@@ -644,10 +646,26 @@ export default function ChatApp() {
 
         <form className="input-area" onSubmit={handleSend}>
           <div className="input-box">
+            <button
+              type="button"
+              className={`btn-web-toggle ${webSearchEnabled ? 'active' : ''}`}
+              onClick={() => setWebSearchEnabled(!webSearchEnabled)}
+              title={
+                webSearchEnabled
+                  ? 'Pesquisa Web ativada (consultando internet + PDFs)'
+                  : 'Ativar pesquisa na Web (consultar páginas e links na internet)'
+              }
+            >
+              <Globe size={15} />
+              <span>Web</span>
+              <span className="web-indicator-dot" />
+            </button>
             <input
               type="text"
               placeholder={
-                activeSubject === 'Geral'
+                webSearchEnabled
+                  ? `Pesquisar na Web e no acervo (${activeSubject})...`
+                  : activeSubject === 'Geral'
                   ? 'Pergunte algo no acervo global de todas as matérias...'
                   : `Pergunte algo sobre ${activeSubject}...`
               }
@@ -655,7 +673,7 @@ export default function ChatApp() {
               onChange={(e) => setInput(e.target.value)}
               disabled={isLoading}
             />
-            <button type="submit" disabled={isLoading || !input.trim()}>
+            <button type="submit" className="btn-send" disabled={isLoading || !input.trim()}>
               {isLoading ? <span className="loader"></span> : 'Enviar'}
             </button>
           </div>
