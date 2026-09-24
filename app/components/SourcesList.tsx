@@ -64,8 +64,8 @@ export default function SourcesList({
               <BookOpen size={14} className="sources-icon" /> Fontes consultadas ({sources.length})
             </span>
             {firstTechTerm && (
-              <span className="source-tech-term-badge" title="Termo técnico formal identificado pelo subagente para busca no acervo">
-                Termo no manual: <strong>{firstTechTerm}</strong>
+              <span className="source-tech-term-badge" title="Termo técnico ou conceito formal identificado pelo subagente para busca no acervo">
+                Termo no acervo: <strong>{firstTechTerm}</strong>
               </span>
             )}
           </div>

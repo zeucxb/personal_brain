@@ -14,7 +14,14 @@ export type EvaluatedChunk = {
   motivo?: string;
 };
 
+export type HistoryMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
 export type QueryExpansion = {
+  mudouDeAssunto?: boolean;
+  assuntoAtual?: string;
   termoTecnicoPrincipal: string;
   sinonimos: string[];
   consultasVetoriais: string[];
@@ -57,7 +64,8 @@ function safeParseJson<T>(raw: string): T | null {
 export async function runIntelligentRAG(
   userQuestion: string,
   materia: string,
-  onStatus?: (status: string) => void
+  onStatus?: (status: string) => void,
+  recentHistory?: HistoryMessage[]
 ): Promise<SubagentRetrievalResult> {
   const llm = new Ollama({
     model: 'llama3',
@@ -83,28 +91,56 @@ export async function runIntelligentRAG(
   const isGlobal = materia === 'Geral';
 
   // -------------------------------------------------------------
-  // PASSO 1: Subagente de Análise e Expansão de Termos Técnicos
+  // PASSO 1: Subagente de Análise de Intenção e Expansão de Termos
   // -------------------------------------------------------------
-  if (onStatus) onStatus('Analisando termos técnicos e sinônimos...');
+  if (onStatus) onStatus('Analisando intenção e termos técnicos no acervo...');
 
-  const expanderPrompt = `Você é um subagente de recuperação técnica para RAG.
-Tópico/Escopo: "${materia}".
-Pergunta do usuário: "${userQuestion}".
+  let historyContext = '';
+  if (recentHistory && recentHistory.length > 0) {
+    const lastUser = [...recentHistory].reverse().find((m) => m.role === 'user');
+    const lastAssistant = [...recentHistory].reverse().find((m) => m.role === 'assistant');
+    if (lastUser) {
+      historyContext = `\nHISTÓRICO RECENTE DA CONVERSA:
+Pergunta anterior do usuário: "${lastUser.content.slice(0, 180)}"
+${lastAssistant ? `Resposta anterior (resumo): "${lastAssistant.content.slice(0, 200).replace(/\n/g, ' ')}..."` : ''}\n`;
+    }
+  }
 
-Em manuais e documentações formais, termos populares/coloquiais utilizam nomenclatura técnica dos fabricantes. Exemplos:
-- "seta", "pisca" -> "indicador de direção", "luz indicadora de direção", "interruptor de direção"
-- "painel digital", "painel" -> "visor dos instrumentos", "mostrador", "velocímetro", "tacômetro" (Cuidado: NUNCA confundir com "painel lateral")
-- "óleo" -> "óleo do motor", "vareta de medição", "visômetro de nível", "especificação do óleo"
-- "embreagem" -> "alavanca da embreagem", "folga da embreagem", "cabo de acionamento"
+  const expanderPrompt = `Você é um subagente especialista em análise de intenção, recuperação semântica e vocabulário técnico para um sistema RAG.
+Tópico/Escopo do Acervo: "${materia}".
+${historyContext}
+Pergunta atual do usuário: "${userQuestion}"
 
-Analise a pergunta do usuário no contexto de "${materia}".
-Retorne ESTRITAMENTE um objeto JSON no seguinte formato:
+SUAS MISSÕES:
+1. DETECÇÃO DE MUDANÇA DE ASSUNTO vs CONTINUAÇÃO:
+   - Se a pergunta atual for um NOVO ASSUNTO (ex: o usuário mudou de seta/pisca para corrente/transmissão, ou de um artigo de lei para outro, ou de um tema para outro diferente):
+     * Defina "mudouDeAssunto": true.
+     * Defina "assuntoAtual" com o novo tema/objeto da pergunta.
+     * DESCARTE completamente o assunto da conversa anterior!
+     * Em "evitar", inclua os termos e componentes do assunto anterior para que não haja contaminação nem falsos positivos!
+   - Se a pergunta atual for uma CONTINUAÇÃO direta ou pergunta com referências/pronomes (ex: "e do outro lado?", "como aciono ele?", "qual o prazo disso?", "resuma o procedimento"):
+     * Defina "mudouDeAssunto": false.
+     * Defina "assuntoAtual" combinando o sujeito anterior com a nova dúvida.
+
+2. ADAPTAÇÃO VOCABULAR AO ACERVO ("${materia}"):
+   Em documentos formais (manuais técnicos, legislações, doutrinas, apostilas, códigos e normas), termos coloquiais ou populares utilizam a nomenclatura oficial e formal do documento.
+   Exemplos em diferentes áreas:
+   - Motos/Veículos: "corrente" -> "corrente de transmissão", "tensão da corrente", "ajuste da folga da corrente"
+   - Motos/Veículos: "seta", "pisca" -> "indicador de direção", "interruptor de direção"
+   - Motos/Veículos: "painel" -> "painel de instrumentos", "mostrador de instrumentos" (CUIDADO: NUNCA "painel lateral")
+   - Direito/Jurídico: "abrir falência" -> "pedido de autofalência", "decretação de falência", "recuperação judicial"
+   - Direito/Jurídico: "empresa individual" -> "sociedade limitada unipessoal", "empresário individual"
+   - TI/Geral: "subir arquivo" -> "upload de arquivo", "ingestão de dados", "processamento em lote"
+
+Retorne ESTRITAMENTE um objeto JSON no formato:
 {
-  "termoTecnicoPrincipal": "nome técnico mais provável",
-  "sinonimos": ["termo técnico 1", "termo técnico 2"],
-  "consultasVetoriais": ["frase formal 1", "frase formal 2"],
-  "palavrasChaveTexto": ["termo exato 1", "termo exato 2"],
-  "evitar": ["termos ou falsos cognatos a evitar"]
+  "mudouDeAssunto": true,
+  "assuntoAtual": "tensão e ajuste da corrente de transmissão",
+  "termoTecnicoPrincipal": "termo técnico/formal mais provável nos documentos",
+  "sinonimos": ["sinônimo formal 1", "sinônimo formal 2"],
+  "consultasVetoriais": ["consulta formal 1", "consulta formal 2"],
+  "palavrasChaveTexto": ["palavra-chave exata 1", "palavra-chave exata 2"],
+  "evitar": ["termos do assunto anterior a descartar se mudou de assunto, ou falsos cognatos"]
 }
 Responda APENAS com o JSON.`;
 
@@ -149,34 +185,34 @@ Responda APENAS com o JSON.`;
       });
     } else {
       const existing = candidateMap.get(id)!;
-      existing.scoreHint = Math.max(existing.scoreHint, priorityWeight);
+      existing.scoreHint += priorityWeight;
     }
   };
 
   const retriever = vectorStore.asRetriever({
-    k: 4,
+    k: 5,
     filter: isGlobal ? undefined : { preFilter: { materia: { $eq: materia } } },
   });
 
   // 2a. Busca vetorial da pergunta original
   try {
     const origDocs = await retriever.invoke(userQuestion);
-    origDocs.forEach((d) => addCandidate(d, 5));
+    origDocs.forEach((d) => addCandidate(d, 10));
   } catch (e) {
     console.warn('Falha na busca vetorial original:', e);
   }
 
   // 2b. Busca vetorial das variações geradas pelo subagente
   if (expansion?.consultasVetoriais && expansion.consultasVetoriais.length > 0) {
-    for (const q of expansion.consultasVetoriais.slice(0, 2)) {
+    for (const q of expansion.consultasVetoriais.slice(0, 3)) {
       try {
         const varDocs = await retriever.invoke(q);
-        varDocs.forEach((d) => addCandidate(d, 8));
+        varDocs.forEach((d) => addCandidate(d, 9));
       } catch (e) {}
     }
   }
 
-  // 2c. Busca textual / regex direta no MongoDB para os termos e sinônimos técnicos
+  // 2c. Busca textual direta no MongoDB com boost para confirmação léxica
   const textTerms = [
     ...(expansion?.palavrasChaveTexto || []),
     ...(expansion?.sinonimos || []),
@@ -194,8 +230,13 @@ Responda APENAS com o JSON.`;
         const filter: any = isGlobal ? {} : { materia };
         filter.text = { $regex: regexStr, $options: 'i' };
 
-        const txtMatches = await collection.find(filter).limit(6).toArray();
-        txtMatches.forEach((d) => addCandidate(d, 10)); // Prioridade alta para correspondência lexical exata
+        const txtMatches = await collection.find(filter).limit(15).toArray();
+        txtMatches.forEach((d) => {
+          const lower = (d.text || '').toLowerCase();
+          const matchCount = validTerms.filter((term) => lower.includes(term.toLowerCase())).length;
+          const weight = Math.min(matchCount * 2, 6);
+          addCandidate(d, weight);
+        });
       } catch (e) {
         console.warn('Falha na busca textual exata:', e);
       }
@@ -204,9 +245,23 @@ Responda APENAS com o JSON.`;
 
   let candidates = Array.from(candidateMap.values());
 
-  // Prioriza candidatos com maior peso e seleciona os top 6 mais promissores para avaliação rápida
+  // Penaliza candidatos que contenham termos proibidos/antigos da lista 'evitar'
+  if (expansion?.evitar && expansion.evitar.length > 0) {
+    const avoidRegexes = expansion.evitar
+      .filter((t) => typeof t === 'string' && t.trim().length >= 3)
+      .map((t) => new RegExp(`\\b${t.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i'));
+
+    for (const cand of candidates) {
+      const containsAvoid = avoidRegexes.some((re) => re.test(cand.text));
+      if (containsAvoid) {
+        cand.scoreHint -= 15;
+      }
+    }
+  }
+
+  // Prioriza candidatos com maior peso acumulado e seleciona os top 8 mais promissores para avaliação rápida
   candidates.sort((a, b) => b.scoreHint - a.scoreHint);
-  const candidatesToEvaluate = candidates.slice(0, 6);
+  const candidatesToEvaluate = candidates.slice(0, 8);
 
   if (candidatesToEvaluate.length === 0) {
     return {
@@ -222,11 +277,16 @@ Responda APENAS com o JSON.`;
   if (onStatus) onStatus('Avaliando relevância e descartando falsos positivos...');
 
   const avoidHint = expansion?.evitar && expansion.evitar.length > 0
-    ? `ATENÇÃO: Descarte completamente falsos cognatos ou trechos sobre: ${expansion.evitar.join(', ')}.`
+    ? `ATENÇÃO: Descarte completamente qualquer trecho que trate de: ${expansion.evitar.join(', ')}.`
     : '';
 
-  const evalPrompt = `Você é um avaliador rigoroso de precisão para um sistema RAG de documentação técnica.
-Pergunta original do usuário: "${userQuestion}"
+  const currentTopicHint = expansion?.assuntoAtual
+    ? `Assunto específico em foco: "${expansion.assuntoAtual}".`
+    : '';
+
+  const evalPrompt = `Você é um avaliador rigoroso de precisão para um sistema RAG de acervo documental.
+Pergunta atual do usuário: "${userQuestion}"
+${currentTopicHint}
 Tópico: "${materia}"
 ${avoidHint}
 
@@ -239,13 +299,13 @@ ${candidatesToEvaluate
   .join('\n\n')}
 
 Instruções:
-- Seja ESTRITO: se o trecho fala de outro assunto ou parte diferente do veículo/assunto, marque "relevante": false e atribua nota baixa (0-4).
-- Se o trecho responde ou ajuda diretamente a responder a pergunta do usuário, marque "relevante": true e nota (5-10).
+- Seja ESTRITO: se o trecho fala de outro assunto ou componente diferente do que foi perguntado, marque "relevante": false e atribua nota baixa (0-4).
+- Se o trecho responde ou ajuda diretamente a responder a pergunta atual sobre ${expansion?.assuntoAtual || userQuestion}, marque "relevante": true e nota (5-10).
 
 Retorne ESTRITAMENTE um array JSON no formato:
 [
   { "id": 1, "relevante": true, "nota": 9, "motivo": "explicação curta" },
-  { "id": 2, "relevante": false, "nota": 2, "motivo": "fala de outro componente" }
+  { "id": 2, "relevante": false, "nota": 2, "motivo": "fala de outro componente/assunto" }
 ]
 Responda APENAS com o array JSON.`;
 

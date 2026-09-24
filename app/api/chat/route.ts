@@ -40,20 +40,6 @@ export async function POST(req: NextRequest) {
     const isGlobal = materia === 'Geral';
     const shouldSearchWeb = Boolean(webSearch) || detectWebSearchIntent(currentMessageContent);
 
-    // Contextual memory query refinement for follow-up questions
-    let searchQuery = currentMessageContent;
-    if (previousMessages.length > 0) {
-      const lastUserMsg = [...previousMessages].reverse().find((m: any) => m.role === 'user');
-      const isFollowUp =
-        /^(isso|esse|essa|ele|ela|o mesmo|resuma|transforme|elabore|reescreva|melhore|adapte|faça|monte|adicione|retire|coloque)\b/i.test(
-          currentMessageContent.trim()
-        ) || currentMessageContent.trim().length < 50;
-
-      if (lastUserMsg && isFollowUp) {
-        searchQuery = `${lastUserMsg.content} - ${currentMessageContent}`;
-      }
-    }
-
     const encoder = new TextEncoder();
     const readableStream = new ReadableStream({
       async start(controller) {
@@ -66,9 +52,14 @@ export async function POST(req: NextRequest) {
             } catch (e) {}
           };
 
-          // 1. Subagente Inteligente de RAG (Expansão, Busca Híbrida e Avaliação de Relevância)
-          sendStatus('🔍 Analisando pergunta e identificando termos técnicos...');
-          const ragResult = await runIntelligentRAG(searchQuery, materia, sendStatus);
+          // 1. Subagente Inteligente de RAG (Análise de Intenção, Expansão, Busca Híbrida e Avaliação de Relevância)
+          sendStatus('🔍 Analisando pergunta e identificando termos no acervo...');
+          const ragResult = await runIntelligentRAG(
+            currentMessageContent,
+            materia,
+            sendStatus,
+            previousMessages.slice(-4)
+          );
           const relevantDocs = ragResult.relevantDocs;
 
           // 2. Formatação das fontes de documentos aprovadas pelo avaliador
@@ -109,7 +100,7 @@ export async function POST(req: NextRequest) {
           if (shouldSearchWeb || (sources.length === 0 && Boolean(webSearch))) {
             sendStatus('🌐 Consultando fontes e links relevantes na Web...');
             try {
-              const webResults = await searchWeb(searchQuery, 4);
+              const webResults = await searchWeb(currentMessageContent, 4);
               webResults.forEach((item) => {
                 const key = `web-${item.url}`;
                 if (!seen.has(key) && item.snippet.length > 0) {
@@ -178,27 +169,31 @@ export async function POST(req: NextRequest) {
           }
 
           const technicalTermHint = ragResult.expansion?.termoTecnicoPrincipal
-            ? `Nota técnica de vocabulário do fabricante/manual: Termo técnico correspondente no acervo: "${ragResult.expansion.termoTecnicoPrincipal}". Se a pergunta usou termo popular (como "seta" ou "painel"), esclareça naturalmente ao usuário como o item é denominado no manual oficial para maior clareza.`
+            ? `Termo técnico/formal correspondente no acervo: "${ragResult.expansion.termoTecnicoPrincipal}". Se a pergunta utilizou termos populares ou coloquiais, faça uma menção natural à nomenclatura formal adotada nos documentos para esclarecer o usuário com clareza.`
+            : '';
+
+          const topicTransitionHint = ragResult.expansion?.mudouDeAssunto
+            ? `\nAVISO DE TRANSIÇÃO DE TÓPICO:
+O usuário MUDOU DE ASSUNTO em relação às mensagens anteriores.
+Novo assunto atual em foco: "${ragResult.expansion.assuntoAtual || currentMessageContent}".
+Responda EXCLUSIVAMENTE sobre o novo assunto solicitado. NUNCA misture nem responda com elementos do assunto anterior da conversa.\n`
             : '';
 
           const prompt = PromptTemplate.fromTemplate(`
 Você é um assistente técnico e acadêmico especializado {scopeDescription}.
 Seu objetivo é ajudar o usuário com respostas precisas, claras e estritamente fundamentadas nas fontes consultadas.
 
-${technicalTermHint}
+{technicalTermHint}
+{topicTransitionHint}
 
-Memória e Iteração da Conversa:
-Você tem acesso ao histórico desta conversa. Quando o usuário pedir para refinar, resumir, expandir, alterar o tom ou construir um texto com base no que já foi discutido, utilize o histórico da conversa e as fontes consultadas para compor a resposta de forma coesa, precisa e bem fundamentada.
-
-Diretriz de citação de fontes (estilo Perplexity):
-Ao mencionar fatos, dados, orientações ou procedimentos extraídos das fontes (documentos ou web), cite a referência numérica entre colchetes como [1], [2] ao final da frase correspondente.
-
-Diretriz de precisão estrita:
+Instruções fundamentais:
+- Responda DIRETAMENTE à pergunta atual do usuário utilizando as fontes fornecidas.
+- Se o usuário mudou de assunto, foque 100% no novo assunto e ignore temas antigos da conversa.
+- Ao citar fatos, procedimentos ou dados das fontes, inclua a referência numérica entre colchetes como [1], [2] ao final da frase correspondente.
 - NUNCA invente informações não presentes nas fontes ou no histórico.
-- Responda diretamente ao que foi perguntado.
 - NUNCA inicie sua resposta com títulos como "Resposta:", "**Resposta:**", "Resposta" ou repetindo a pergunta. Comece diretamente explicando.
 
-Contexto das Fontes:
+Contexto das Fontes Consultadas:
 {context}
 
 {chatHistory}
@@ -217,6 +212,8 @@ Mensagem atual do Usuário:
             chatHistory: chatHistoryBlock,
             question: currentMessageContent,
             scopeDescription,
+            technicalTermHint,
+            topicTransitionHint,
           });
 
           for await (const chunk of stream) {
