@@ -1163,6 +1163,13 @@ body {
   background: rgba(16, 185, 129, 0.12);
 }
 
+.source-meta-tag.source-page-tag {
+  color: #818cf8;
+  background: rgba(99, 102, 241, 0.15);
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  font-weight: 600;
+}
+
 .source-snippet-preview {
   font-size: 0.68rem;
   color: var(--text-muted);

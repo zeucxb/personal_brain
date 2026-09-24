@@ -15,6 +15,7 @@ export type ChatSource = {
   title: string;
   source: string;
   url?: string;
+  page?: number;
   snippet: string;
   materia?: string;
 };
@@ -90,14 +91,18 @@ export async function POST(req: NextRequest) {
     retrievedDocs.forEach((doc) => {
       const srcName = doc.metadata?.source || doc.source || 'Documento';
       const docMateria = doc.metadata?.materia || doc.materia || materia;
+      const docPage = doc.metadata?.page || doc.page;
       const snippet = doc.pageContent ? doc.pageContent.trim() : '';
 
       // Avoid duplicate cards for same document and same snippet start
-      const key = `${srcName}-${snippet.slice(0, 60)}`;
+      const key = `${srcName}-p${docPage || 0}-${snippet.slice(0, 60)}`;
       if (!seen.has(key) && snippet.length > 0) {
         seen.add(key);
         const index = sources.length + 1;
-        const fileUrl = `/api/documents/file?filename=${encodeURIComponent(srcName)}&materia=${encodeURIComponent(docMateria)}`;
+        let fileUrl = `/api/documents/file?filename=${encodeURIComponent(srcName)}&materia=${encodeURIComponent(docMateria)}`;
+        if (docPage) {
+          fileUrl += `#page=${docPage}`;
+        }
         sources.push({
           id: `doc-${index}`,
           index,
@@ -105,6 +110,7 @@ export async function POST(req: NextRequest) {
           title: srcName,
           source: srcName,
           url: fileUrl,
+          page: typeof docPage === 'number' ? docPage : undefined,
           snippet: snippet.length > 350 ? snippet.slice(0, 350) + '...' : snippet,
           materia: docMateria,
         });
@@ -156,7 +162,7 @@ export async function POST(req: NextRequest) {
               if (s.type === 'web') {
                 return `[${s.index}] Fonte Web: ${s.title} (Origem: ${s.source} | URL: ${s.url})\nConteúdo: ${s.snippet}`;
               }
-              return `[${s.index}] Documento: ${s.title} (Tópico: ${s.materia})\nConteúdo: ${s.snippet}`;
+              return `[${s.index}] Documento: ${s.title} (Tópico: ${s.materia}${s.page ? ` | Pág. ${s.page}` : ''})\nConteúdo: ${s.snippet}`;
             })
             .join('\n\n---\n\n')
         : 'Nenhum documento ou fonte web relevante encontrada.';

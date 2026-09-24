@@ -88,14 +88,47 @@ export async function GET(req: NextRequest) {
     }
 
     const fileDoc = files[0];
+    const fileSize = fileDoc.length;
+    const rangeHeader = req.headers.get('range');
+
+    if (rangeHeader) {
+      const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+      if (match) {
+        const start = parseInt(match[1], 10);
+        const end = match[2] ? parseInt(match[2], 10) : fileSize - 1;
+
+        if (start < fileSize && end >= start) {
+          const chunkLength = end - start + 1;
+          const nodeStream = bucket.openDownloadStream(fileDoc._id, {
+            start,
+            end: end + 1,
+          });
+          const webStream = Readable.toWeb(nodeStream) as ReadableStream;
+
+          return new Response(webStream, {
+            status: 206,
+            headers: {
+              'Content-Type': 'application/pdf',
+              'Content-Disposition': `inline; filename="${encodeURIComponent(filename)}"`,
+              'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+              'Content-Length': chunkLength.toString(),
+              'Accept-Ranges': 'bytes',
+            },
+          });
+        }
+      }
+    }
+
     const nodeStream = bucket.openDownloadStream(fileDoc._id);
     const webStream = Readable.toWeb(nodeStream) as ReadableStream;
 
     return new Response(webStream, {
+      status: 200,
       headers: {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `inline; filename="${encodeURIComponent(filename)}"`,
-        'Content-Length': fileDoc.length.toString(),
+        'Content-Length': fileSize.toString(),
+        'Accept-Ranges': 'bytes',
       },
     });
   } catch (error: any) {

@@ -10,6 +10,7 @@ export type ChatSource = {
   title: string;
   source: string;
   url?: string;
+  page?: number;
   snippet: string;
   materia?: string;
 };
@@ -69,7 +70,7 @@ export default function SourcesList({
                   key={src.id || src.index}
                   className={`source-card ${isSelected ? 'active' : ''}`}
                   onClick={() => setSelectedSource(src)}
-                  title={`Clique para ver o trecho extraído deste ${isDoc ? 'documento' : 'link'}`}
+                  title={`Clique para ver o trecho extraído deste ${isDoc ? `documento${src.page ? ` (Pág. ${src.page})` : ''}` : 'link'}`}
                 >
               <div className="source-card-header">
                 <span className="source-index">[{src.index}]</span>
@@ -88,7 +89,13 @@ export default function SourcesList({
                     rel="noreferrer"
                     className="source-link"
                     onClick={(e) => e.stopPropagation()}
-                    title={isDoc ? 'Abrir arquivo PDF original' : 'Abrir link original'}
+                    title={
+                      isDoc
+                        ? src.page
+                          ? `Abrir PDF original na página ${src.page}`
+                          : 'Abrir arquivo PDF original'
+                        : 'Abrir link original'
+                    }
                   >
                     <ExternalLink size={12} />
                   </a>
@@ -97,7 +104,12 @@ export default function SourcesList({
 
               <div className="source-card-meta">
                 {isDoc ? (
-                  <span className="source-meta-tag">{src.materia || 'PDF'}</span>
+                  <>
+                    <span className="source-meta-tag">{src.materia || 'PDF'}</span>
+                    {src.page && (
+                      <span className="source-meta-tag source-page-tag">Pág. {src.page}</span>
+                    )}
+                  </>
                 ) : (
                   <span className="source-meta-tag web-tag">{src.source || 'Web'}</span>
                 )}
@@ -127,6 +139,9 @@ export default function SourcesList({
                     {selectedSource.type === 'document' ? (
                       <>
                         Documento do tópico: <strong>{selectedSource.materia || 'Geral'}</strong>
+                        {selectedSource.page && (
+                          <> • Página: <strong>{selectedSource.page}</strong></>
+                        )}
                       </>
                     ) : (
                       <>
@@ -160,7 +175,11 @@ export default function SourcesList({
                   className="btn-submit"
                 >
                   <ExternalLink size={14} />{' '}
-                  {selectedSource.type === 'document' ? 'Abrir PDF original' : 'Abrir página original'}
+                  {selectedSource.type === 'document'
+                    ? selectedSource.page
+                      ? `Abrir PDF na página ${selectedSource.page}`
+                      : 'Abrir PDF original'
+                    : 'Abrir página original'}
                 </a>
               )}
               <button className="btn-cancel" onClick={() => setSelectedSource(null)}>

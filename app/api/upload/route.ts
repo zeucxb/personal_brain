@@ -19,27 +19,58 @@ export async function POST(req: NextRequest) {
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    const pdfData = await pdfParse(new Uint8Array(arrayBuffer) as unknown as Buffer);
-    const text = pdfData.text;
+    const pdfBuffer = Buffer.from(arrayBuffer);
 
-    if (!text || text.trim().length === 0) {
+    // Extrai texto página por página para preservar o número exato da página em cada chunk
+    const pages: { pageNumber: number; text: string }[] = [];
+    const render_page = (pageData: any) => {
+      const render_options = { normalizeWhitespace: false, disableCombineTextItems: false };
+      return pageData.getTextContent(render_options).then((textContent: any) => {
+        let lastY: any, pageText = '';
+        for (const item of textContent.items) {
+          if (lastY === item.transform[5] || !lastY) {
+            pageText += item.str;
+          } else {
+            pageText += '\n' + item.str;
+          }
+          lastY = item.transform[5];
+        }
+        const pageNumber = (pageData.pageIndex ?? 0) + 1;
+        const trimmed = pageText.trim();
+        if (trimmed.length > 0) {
+          pages.push({ pageNumber, text: trimmed });
+        }
+        return pageText;
+      });
+    };
+
+    const pdfData = await pdfParse(pdfBuffer, { pagerender: render_page });
+
+    if (pages.length === 0 || !pdfData.text || pdfData.text.trim().length === 0) {
       return NextResponse.json({ error: 'Nenhum texto legível encontrado no PDF.' }, { status: 400 });
     }
 
-    // Chunking inteligente com RecursiveCharacterTextSplitter e overlap
+    // Chunking inteligente com RecursiveCharacterTextSplitter e overlap por página
     const splitter = new RecursiveCharacterTextSplitter({
       chunkSize: 1000,
       chunkOverlap: 200,
     });
 
-    const docs = await splitter.createDocuments(
-      [text],
-      [{ materia, source: file.name }]
-    );
+    const pageTexts = pages.map((p) => p.text);
+    const pageMetadatas = pages.map((p) => ({
+      materia,
+      source: file.name,
+      page: p.pageNumber,
+    }));
+
+    const docs = await splitter.createDocuments(pageTexts, pageMetadatas);
 
     const client = await clientPromise;
     const db = client.db('ragchat');
     const collection = db.collection('documents');
+
+    // Remove chunks antigos do mesmo documento neste tópico se houver
+    await collection.deleteMany({ source: file.name, materia });
 
     // Armazena o arquivo PDF original no GridFS do MongoDB para visualização e download
     const bucket = new GridFSBucket(db, { bucketName: 'pdf_files' });
