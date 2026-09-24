@@ -491,6 +491,10 @@ body {
   to { transform: rotate(360deg); }
 }
 
+.spin {
+  animation: spin 1s linear infinite;
+}
+
 /* Sidebar Extras */
 .logo-icon {
   color: var(--accent);
@@ -1332,4 +1336,225 @@ body {
   font-size: 0.82rem;
   color: #94a3b8;
   font-weight: 500;
+}
+
+/* Modal de Upload em Lote */
+.modal-batch-upload {
+  max-width: 660px !important;
+  width: 92vw !important;
+}
+
+.upload-dropzone {
+  border: 2px dashed rgba(59, 130, 246, 0.4);
+  background: rgba(30, 41, 59, 0.35);
+  border-radius: 0.85rem;
+  padding: 1.8rem 1.25rem;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 1.25rem;
+  user-select: none;
+}
+
+.upload-dropzone:hover,
+.upload-dropzone.dragover {
+  border-color: #60a5fa;
+  background: rgba(59, 130, 246, 0.1);
+  transform: translateY(-1px);
+}
+
+.dropzone-icon {
+  color: #60a5fa;
+  margin-bottom: 0.2rem;
+}
+
+.dropzone-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.dropzone-subtitle {
+  font-size: 0.78rem;
+  color: #94a3b8;
+}
+
+.batch-progress-box {
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.65rem;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+.batch-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  margin-bottom: 0.4rem;
+}
+
+.batch-progress-track {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.batch-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+
+.upload-queue-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #cbd5e1;
+  margin-bottom: 0.5rem;
+}
+
+.btn-clear-queue {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.25rem;
+  transition: color 0.15s;
+}
+
+.btn-clear-queue:hover {
+  color: #f87171;
+}
+
+.upload-queue-container {
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  padding-right: 0.25rem;
+}
+
+.upload-queue-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 0.85rem;
+  background: rgba(30, 41, 59, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 0.55rem;
+  font-size: 0.85rem;
+}
+
+.queue-item-info {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.queue-item-name {
+  color: #f1f5f9;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 250px;
+}
+
+.queue-item-size {
+  color: #64748b;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.queue-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.badge-queued {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.12);
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.35rem;
+}
+
+.badge-processing {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: #60a5fa;
+  background: rgba(59, 130, 246, 0.15);
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.35rem;
+  font-weight: 600;
+}
+
+.badge-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.15);
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.35rem;
+  font-weight: 600;
+}
+
+.badge-error {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.15);
+  padding: 0.15rem 0.45rem;
+  border-radius: 0.35rem;
+  font-weight: 600;
+  max-width: 170px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.btn-remove-queue {
+  background: none;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  padding: 0.2rem;
+  border-radius: 0.25rem;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+
+.btn-remove-queue:hover {
+  color: #f87171;
 }

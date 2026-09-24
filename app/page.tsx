@@ -15,6 +15,10 @@ import {
   Globe,
   ExternalLink,
   Pencil,
+  CheckCircle2,
+  AlertCircle,
+  Loader2,
+  Clock,
 } from 'lucide-react';
 
 import SourcesList, { ChatSource, linkifyCitations } from './components/SourcesList';
@@ -39,6 +43,17 @@ type DocItem = {
   filename: string;
   materia: string;
   chunksCount: number;
+};
+
+export type UploadQueueItem = {
+  id: string;
+  file: File;
+  name: string;
+  size: number;
+  status: 'queued' | 'processing' | 'done' | 'error';
+  pages?: number;
+  chunks?: number;
+  error?: string;
 };
 
 function cleanAiResponse(text: string): string {
@@ -140,8 +155,11 @@ export default function ChatApp() {
   // Modals state
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showDocsModal, setShowDocsModal] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
-  const [uploading, setUploading] = useState(false);
+  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
+  const [isBatchUploading, setIsBatchUploading] = useState(false);
+  const [batchStats, setBatchStats] = useState({ completed: 0, total: 0 });
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [deletingDoc, setDeletingDoc] = useState<string | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -401,35 +419,132 @@ export default function ChatApp() {
     }
   };
 
-  const handleUpload = async () => {
-    if (!file) return;
-    setUploading(true);
+  function formatBytes(bytes: number) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
 
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('materia', activeSubject);
-
-    try {
-      const res = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setShowUploadModal(false);
-        setFile(null);
-        await fetchDocuments();
-        await fetchSubjects();
-        alert(`Sucesso! Documento fatiado em ${data.chunks} chunks e indexado com embeddings.`);
-      } else {
-        alert(data.error || 'Erro ao indexar documento.');
-      }
-    } catch (e) {
-      console.error(e);
-      alert('Erro no servidor ao processar o PDF.');
-    } finally {
-      setUploading(false);
+  const handleFilesSelected = (fileList: FileList | File[] | null) => {
+    if (!fileList) return;
+    const validFiles = Array.from(fileList).filter((f) =>
+      f.name.toLowerCase().endsWith('.pdf')
+    );
+    if (validFiles.length === 0) {
+      alert('Por favor, selecione arquivos em formato PDF (.pdf).');
+      return;
     }
+
+    setUploadQueue((prev) => {
+      const existingNames = new Set(prev.map((i) => i.name));
+      const additions: UploadQueueItem[] = validFiles
+        .filter((f) => !existingNames.has(f.name))
+        .map((f) => ({
+          id: `${f.name}-${Date.now()}-${Math.random()}`,
+          file: f,
+          name: f.name,
+          size: f.size,
+          status: 'queued',
+        }));
+      return [...prev, ...additions];
+    });
+  };
+
+  const handleRemoveQueueItem = (id: string) => {
+    if (isBatchUploading) return;
+    setUploadQueue((prev) => prev.filter((item) => item.id !== id));
+  };
+
+  const handleClearQueue = () => {
+    if (isBatchUploading) return;
+    setUploadQueue([]);
+    setBatchStats({ completed: 0, total: 0 });
+  };
+
+  const handleBatchUpload = async () => {
+    if (uploadQueue.length === 0 || isBatchUploading) return;
+    setIsBatchUploading(true);
+    const total = uploadQueue.length;
+    setBatchStats({ completed: 0, total });
+
+    const batchId = `batch_${Date.now()}`;
+    let completedCount = 0;
+
+    for (let i = 0; i < uploadQueue.length; i++) {
+      const item = uploadQueue[i];
+
+      // Se já estava concluído, preserva
+      if (item.status === 'done') {
+        completedCount++;
+        setBatchStats({ completed: completedCount, total });
+        continue;
+      }
+
+      setUploadQueue((prev) =>
+        prev.map((it) => (it.id === item.id ? { ...it, status: 'processing' } : it))
+      );
+
+      const formData = new FormData();
+      formData.append('file', item.file);
+      formData.append('materia', activeSubject);
+      formData.append('batchId', batchId);
+
+      try {
+        const res = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        });
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          const resultInfo = data.results?.[0] || {
+            pages: data.pages || 0,
+            chunks: data.chunks || 0,
+          };
+          setUploadQueue((prev) =>
+            prev.map((it) =>
+              it.id === item.id
+                ? {
+                    ...it,
+                    status: 'done',
+                    pages: resultInfo.pages,
+                    chunks: resultInfo.chunks,
+                  }
+                : it
+            )
+          );
+        } else {
+          setUploadQueue((prev) =>
+            prev.map((it) =>
+              it.id === item.id
+                ? {
+                    ...it,
+                    status: 'error',
+                    error: data.error || 'Erro ao fatiar/vetorizar',
+                  }
+                : it
+            )
+          );
+        }
+      } catch (err: any) {
+        setUploadQueue((prev) =>
+          prev.map((it) =>
+            it.id === item.id
+              ? { ...it, status: 'error', error: err.message || 'Falha na conexão' }
+              : it
+          )
+        );
+      }
+
+      completedCount++;
+      setBatchStats({ completed: completedCount, total });
+    }
+
+    await fetchDocuments();
+    await fetchSubjects();
+    setIsBatchUploading(false);
   };
 
   const handleDeleteDocument = async (filename: string, materia: string) => {
@@ -796,53 +911,178 @@ export default function ChatApp() {
         </form>
       </main>
 
-      {/* Upload Modal */}
+      {/* Upload Modal (Batch Processing) */}
       {showUploadModal && (
-        <div className="modal-overlay" onClick={() => !uploading && setShowUploadModal(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="modal-overlay"
+          onClick={() => !isBatchUploading && setShowUploadModal(false)}
+        >
+          <div
+            className="modal modal-batch-upload"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="modal-header">
-              <h3>Upload de PDF para o tópico "{activeSubject}"</h3>
+              <div>
+                <h3>Upload de PDFs em Lote — Tópico "{activeSubject}"</h3>
+                <p className="modal-subtitle">
+                  Selecione múltiplos arquivos (.pdf) de uma vez. O processamento em fila indexa cada arquivo com páginas e vetores.
+                </p>
+              </div>
               <button
                 className="close-btn"
                 onClick={() => setShowUploadModal(false)}
-                disabled={uploading}
+                disabled={isBatchUploading}
               >
                 <X size={18} />
               </button>
             </div>
 
-            <p className="modal-description">
-              O arquivo será fatiado em blocos contextuais com sobreposição e vetorizado via Ollama.
-            </p>
+            {/* Dropzone */}
+            <div
+              className={`upload-dropzone ${isDragOver ? 'dragover' : ''}`}
+              onClick={() => !isBatchUploading && fileInputRef.current?.click()}
+              onDragOver={(e) => {
+                e.preventDefault();
+                if (!isBatchUploading) setIsDragOver(true);
+              }}
+              onDragLeave={() => setIsDragOver(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setIsDragOver(false);
+                if (!isBatchUploading) handleFilesSelected(e.dataTransfer.files);
+              }}
+            >
+              <UploadCloud size={36} className="dropzone-icon" />
+              <div className="dropzone-title">
+                Arraste e solte seus PDFs aqui ou clique para selecionar
+              </div>
+              <div className="dropzone-subtitle">
+                Envie todos os 10, 20 ou mais PDFs simultaneamente de uma só vez
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf"
+                style={{ display: 'none' }}
+                onChange={(e) => {
+                  handleFilesSelected(e.target.files);
+                  if (e.target) e.target.value = '';
+                }}
+                disabled={isBatchUploading}
+              />
+            </div>
 
-            <input
-              type="file"
-              accept=".pdf"
-              className="file-input"
-              onChange={(e) => setFile(e.target.files?.[0] || null)}
-            />
+            {/* Batch Progress Bar */}
+            {batchStats.total > 0 && (
+              <div className="batch-progress-box">
+                <div className="batch-progress-header">
+                  <span>
+                    {isBatchUploading
+                      ? `Processando fila: ${batchStats.completed} de ${batchStats.total} arquivos`
+                      : `Lote concluído: ${batchStats.completed} de ${batchStats.total} arquivos processados`}
+                  </span>
+                  <span>{Math.round((batchStats.completed / batchStats.total) * 100)}%</span>
+                </div>
+                <div className="batch-progress-track">
+                  <div
+                    className="batch-progress-fill"
+                    style={{
+                      width: `${Math.round((batchStats.completed / batchStats.total) * 100)}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Queue List */}
+            {uploadQueue.length > 0 && (
+              <>
+                <div className="upload-queue-header">
+                  <span>Arquivos selecionados ({uploadQueue.length})</span>
+                  {!isBatchUploading && (
+                    <button className="btn-clear-queue" onClick={handleClearQueue}>
+                      Limpar lista
+                    </button>
+                  )}
+                </div>
+
+                <div className="upload-queue-container">
+                  {uploadQueue.map((item) => (
+                    <div key={item.id} className="upload-queue-item">
+                      <div className="queue-item-info">
+                        <FileText size={16} className="source-type-icon doc" />
+                        <span className="queue-item-name" title={item.name}>
+                          {item.name}
+                        </span>
+                        <span className="queue-item-size">{formatBytes(item.size)}</span>
+                      </div>
+
+                      <div className="queue-item-actions">
+                        {item.status === 'queued' && (
+                          <span className="badge-queued">
+                            <Clock size={12} /> Na fila
+                          </span>
+                        )}
+                        {item.status === 'processing' && (
+                          <span className="badge-processing">
+                            <Loader2 size={12} className="spin" /> Vetorizando...
+                          </span>
+                        )}
+                        {item.status === 'done' && (
+                          <span className="badge-done">
+                            <CheckCircle2 size={12} /> Concluído ({item.pages} págs, {item.chunks} chunks)
+                          </span>
+                        )}
+                        {item.status === 'error' && (
+                          <span className="badge-error" title={item.error}>
+                            <AlertCircle size={12} /> {item.error || 'Erro'}
+                          </span>
+                        )}
+                        {!isBatchUploading && item.status !== 'processing' && (
+                          <button
+                            type="button"
+                            className="btn-remove-queue"
+                            onClick={() => handleRemoveQueueItem(item.id)}
+                            title="Remover este arquivo"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
 
             <div className="modal-actions">
-              <button
-                className="btn-cancel"
-                onClick={() => setShowUploadModal(false)}
-                disabled={uploading}
-              >
-                Cancelar
-              </button>
-              <button
-                className="btn-submit"
-                onClick={handleUpload}
-                disabled={uploading || !file}
-              >
-                {uploading ? (
-                  <>
-                    <span className="loader"></span> Vetorizando...
-                  </>
-                ) : (
-                  'Fazer Upload e Vetorizar'
+              {!isBatchUploading && (
+                <button
+                  className="btn-cancel"
+                  onClick={() => {
+                    setShowUploadModal(false);
+                    setUploadQueue([]);
+                    setBatchStats({ completed: 0, total: 0 });
+                  }}
+                >
+                  {uploadQueue.some((i) => i.status === 'done') ? 'Fechar' : 'Cancelar'}
+                </button>
+              )}
+
+              {!isBatchUploading &&
+                uploadQueue.length > 0 &&
+                uploadQueue.some((i) => i.status !== 'done') && (
+                  <button className="btn-submit" onClick={handleBatchUpload}>
+                    Iniciar Upload de {uploadQueue.filter((i) => i.status !== 'done').length} PDF(s)
+                  </button>
                 )}
-              </button>
+
+              {isBatchUploading && (
+                <button className="btn-submit" disabled>
+                  <Loader2 size={14} className="spin" /> Processando lote em fila...
+                </button>
+              )}
             </div>
           </div>
         </div>
