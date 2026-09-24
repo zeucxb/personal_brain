@@ -52,9 +52,11 @@ function cleanAiResponse(text: string): string {
 function AssistantMessage({
   content,
   sources,
+  status,
 }: {
   content: string;
   sources?: ChatSource[];
+  status?: string;
 }) {
   const [selectedSource, setSelectedSource] = useState<ChatSource | null>(null);
 
@@ -114,10 +116,9 @@ function AssistantMessage({
           </ReactMarkdown>
         </div>
       ) : (
-        <div className="typing-indicator">
-          <span></span>
-          <span></span>
-          <span></span>
+        <div className="agent-thinking-card">
+          <div className="agent-thinking-spinner" />
+          <span className="agent-thinking-text">{status || 'Pesquisando e analisando o acervo...'}</span>
         </div>
       )}
     </>
@@ -134,6 +135,7 @@ export default function ChatApp() {
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [subagentStatus, setSubagentStatus] = useState<string>('');
 
   // Modals state
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -332,7 +334,9 @@ export default function ChatApp() {
               const dataStr = trimmed.slice(5).trim();
               try {
                 const data = JSON.parse(dataStr);
-                if (currentEvent === 'sources') {
+                if (currentEvent === 'status') {
+                  setSubagentStatus(data.message || '');
+                } else if (currentEvent === 'sources') {
                   capturedSources = data;
                   hasChange = true;
                 } else if (currentEvent === 'token') {
@@ -393,6 +397,7 @@ export default function ChatApp() {
       console.error('Error in chat:', error);
     } finally {
       setIsLoading(false);
+      setSubagentStatus('');
     }
   };
 
@@ -738,10 +743,14 @@ export default function ChatApp() {
               </p>
             </div>
           ) : (
-            currentMessages.map((msg) => (
+            currentMessages.map((msg, idx) => (
               <div key={msg.id} className={`message ${msg.role}`}>
                 {msg.role === 'assistant' ? (
-                  <AssistantMessage content={msg.content} sources={msg.sources} />
+                  <AssistantMessage
+                    content={msg.content}
+                    sources={msg.sources}
+                    status={isLoading && idx === currentMessages.length - 1 ? subagentStatus : undefined}
+                  />
                 ) : (
                   msg.content
                 )}

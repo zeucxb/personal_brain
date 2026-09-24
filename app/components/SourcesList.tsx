@@ -13,6 +13,8 @@ export type ChatSource = {
   page?: number;
   snippet: string;
   materia?: string;
+  technicalTerm?: string;
+  evalMotivo?: string;
 };
 
 export interface SourcesListProps {
@@ -51,6 +53,8 @@ export default function SourcesList({
 
   if ((!sources || sources.length === 0) && !selectedSource) return null;
 
+  const firstTechTerm = sources?.find((s) => s.technicalTerm)?.technicalTerm;
+
   return (
     <>
       {sources && sources.length > 0 && (
@@ -59,6 +63,11 @@ export default function SourcesList({
             <span className="sources-title">
               <BookOpen size={14} className="sources-icon" /> Fontes consultadas ({sources.length})
             </span>
+            {firstTechTerm && (
+              <span className="source-tech-term-badge" title="Termo técnico formal identificado pelo subagente para busca no acervo">
+                Termo no manual: <strong>{firstTechTerm}</strong>
+              </span>
+            )}
           </div>
 
           <div className="sources-grid">
@@ -160,6 +169,11 @@ export default function SourcesList({
             </div>
 
             <div className="source-modal-body">
+              {selectedSource.evalMotivo && (
+                <div className="source-eval-badge">
+                  ✓ <strong>Aprovado pelo Avaliador:</strong> {selectedSource.evalMotivo}
+                </div>
+              )}
               <div className="source-body-label">Trecho consultado pelo RAG para gerar a resposta:</div>
               <blockquote className="source-snippet-quote">
                 {selectedSource.snippet}

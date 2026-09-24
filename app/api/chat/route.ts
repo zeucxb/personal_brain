@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Ollama } from '@langchain/community/llms/ollama';
-import { OllamaEmbeddings } from '@langchain/community/embeddings/ollama';
-import { MongoDBAtlasVectorSearch } from '@langchain/mongodb';
-import clientPromise, { ensureVectorIndex } from '@/lib/mongodb';
+import { ensureVectorIndex } from '@/lib/mongodb';
 import { PromptTemplate } from '@langchain/core/prompts';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { searchWeb, detectWebSearchIntent } from '@/lib/tools/webSearch';
+import { runIntelligentRAG } from '@/lib/rag/subagent';
 
 export type ChatSource = {
   id: string;
@@ -18,6 +17,8 @@ export type ChatSource = {
   page?: number;
   snippet: string;
   materia?: string;
+  technicalTerm?: string;
+  evalMotivo?: string;
 };
 
 export async function POST(req: NextRequest) {
@@ -33,14 +34,13 @@ export async function POST(req: NextRequest) {
     const previousMessages = messages.slice(0, -1);
 
     if (!materia) {
-      return NextResponse.json({ error: 'Matéria não fornecida' }, { status: 400 });
+      return NextResponse.json({ error: 'Tópico não fornecido' }, { status: 400 });
     }
 
     const isGlobal = materia === 'Geral';
     const shouldSearchWeb = Boolean(webSearch) || detectWebSearchIntent(currentMessageContent);
 
-    // If current message is a follow-up/refinement (e.g. "resuma isso", "elabore um texto para o fórum"),
-    // combine with previous user topic so vector search/web search continues retrieving relevant chunks.
+    // Contextual memory query refinement for follow-up questions
     let searchQuery = currentMessageContent;
     if (previousMessages.length > 0) {
       const lastUserMsg = [...previousMessages].reverse().find((m: any) => m.role === 'user');
@@ -54,144 +54,149 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const client = await clientPromise;
-    const db = client.db('ragchat');
-    const collection = db.collection('documents');
+    const encoder = new TextEncoder();
+    const readableStream = new ReadableStream({
+      async start(controller) {
+        try {
+          const sendStatus = (statusText: string) => {
+            try {
+              controller.enqueue(
+                encoder.encode(`event: status\ndata: ${JSON.stringify({ message: statusText })}\n\n`)
+              );
+            } catch (e) {}
+          };
 
-    const embeddings = new OllamaEmbeddings({
-      model: 'nomic-embed-text',
-      baseUrl: 'http://localhost:11434',
-    });
+          // 1. Subagente Inteligente de RAG (Expansão, Busca Híbrida e Avaliação de Relevância)
+          sendStatus('🔍 Analisando pergunta e identificando termos técnicos...');
+          const ragResult = await runIntelligentRAG(searchQuery, materia, sendStatus);
+          const relevantDocs = ragResult.relevantDocs;
 
-    const vectorStore = new MongoDBAtlasVectorSearch(embeddings, {
-      collection,
-      indexName: 'vector_index',
-      textKey: 'text',
-      embeddingKey: 'embedding',
-    });
+          // 2. Formatação das fontes de documentos aprovadas pelo avaliador
+          const sources: ChatSource[] = [];
+          const seen = new Set<string>();
 
-    const retriever = vectorStore.asRetriever({
-      filter: isGlobal ? undefined : { preFilter: { materia: { $eq: materia } } },
-      k: 4,
-    });
+          relevantDocs.forEach((doc) => {
+            const srcName = doc.source || 'Documento';
+            const docMateria = doc.materia || materia;
+            const docPage = doc.page;
+            const snippet = doc.text.trim();
 
-    // 1. Retrieve documents from Vector Store
-    let retrievedDocs: any[] = [];
-    try {
-      retrievedDocs = await retriever.invoke(searchQuery);
-    } catch (err) {
-      console.warn('Retriever fallback:', err);
-    }
-
-    // 2. Format structured generic sources (Perplexity style)
-    const sources: ChatSource[] = [];
-    const seen = new Set<string>();
-
-    // 2a. Add document sources
-    retrievedDocs.forEach((doc) => {
-      const srcName = doc.metadata?.source || doc.source || 'Documento';
-      const docMateria = doc.metadata?.materia || doc.materia || materia;
-      const docPage = doc.metadata?.page || doc.page;
-      const snippet = doc.pageContent ? doc.pageContent.trim() : '';
-
-      // Avoid duplicate cards for same document and same snippet start
-      const key = `${srcName}-p${docPage || 0}-${snippet.slice(0, 60)}`;
-      if (!seen.has(key) && snippet.length > 0) {
-        seen.add(key);
-        const index = sources.length + 1;
-        let fileUrl = `/api/documents/file?filename=${encodeURIComponent(srcName)}&materia=${encodeURIComponent(docMateria)}`;
-        if (docPage) {
-          fileUrl += `#page=${docPage}`;
-        }
-        sources.push({
-          id: `doc-${index}`,
-          index,
-          type: 'document',
-          title: srcName,
-          source: srcName,
-          url: fileUrl,
-          page: typeof docPage === 'number' ? docPage : undefined,
-          snippet: snippet.length > 350 ? snippet.slice(0, 350) + '...' : snippet,
-          materia: docMateria,
-        });
-      }
-    });
-
-    // 2b. Add Web Search sources if enabled or detected
-    if (shouldSearchWeb) {
-      try {
-        const webResults = await searchWeb(searchQuery, 4);
-        webResults.forEach((item) => {
-          const key = `web-${item.url}`;
-          if (!seen.has(key) && item.snippet.length > 0) {
-            seen.add(key);
-            const index = sources.length + 1;
-            sources.push({
-              id: `web-${index}`,
-              index,
-              type: 'web',
-              title: item.title,
-              source: item.source,
-              url: item.url,
-              snippet: item.snippet.length > 350 ? item.snippet.slice(0, 350) + '...' : item.snippet,
-              materia: 'Web',
-            });
-          }
-        });
-      } catch (webErr) {
-        console.warn('Web search failed or timed out:', webErr);
-      }
-    }
-
-    // 3. Format conversational memory history (last 8 messages)
-    const recentHistory = previousMessages.slice(-8);
-    const chatHistoryBlock =
-      recentHistory.length > 0
-        ? `Histórico recente da conversa:\n` +
-          recentHistory
-            .map((m: any) => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`)
-            .join('\n\n') +
-          '\n\n---\n'
-        : '';
-
-    // 4. Format context string with [1], [2] labels for LLM grounding
-    const contextString =
-      sources.length > 0
-        ? sources
-            .map((s) => {
-              if (s.type === 'web') {
-                return `[${s.index}] Fonte Web: ${s.title} (Origem: ${s.source} | URL: ${s.url})\nConteúdo: ${s.snippet}`;
+            const key = `${srcName}-p${docPage || 0}-${snippet.slice(0, 60)}`;
+            if (!seen.has(key) && snippet.length > 0) {
+              seen.add(key);
+              const index = sources.length + 1;
+              let fileUrl = `/api/documents/file?filename=${encodeURIComponent(srcName)}&materia=${encodeURIComponent(docMateria)}`;
+              if (docPage) {
+                fileUrl += `#page=${docPage}`;
               }
-              return `[${s.index}] Documento: ${s.title} (Tópico: ${s.materia}${s.page ? ` | Pág. ${s.page}` : ''})\nConteúdo: ${s.snippet}`;
-            })
-            .join('\n\n---\n\n')
-        : 'Nenhum documento ou fonte web relevante encontrada.';
+              sources.push({
+                id: `doc-${index}`,
+                index,
+                type: 'document',
+                title: srcName,
+                source: srcName,
+                url: fileUrl,
+                page: typeof docPage === 'number' ? docPage : undefined,
+                snippet: snippet.length > 350 ? snippet.slice(0, 350) + '...' : snippet,
+                materia: docMateria,
+                technicalTerm: ragResult.expansion?.termoTecnicoPrincipal,
+                evalMotivo: doc.motivo,
+              });
+            }
+          });
 
-    // 5. Setup Ollama LLM
-    const llm = new Ollama({
-      model: 'llama3',
-      baseUrl: 'http://localhost:11434',
-    });
+          // 3. Busca Web adicional se ativada ou se nenhum documento relevante foi encontrado
+          if (shouldSearchWeb || (sources.length === 0 && Boolean(webSearch))) {
+            sendStatus('🌐 Consultando fontes e links relevantes na Web...');
+            try {
+              const webResults = await searchWeb(searchQuery, 4);
+              webResults.forEach((item) => {
+                const key = `web-${item.url}`;
+                if (!seen.has(key) && item.snippet.length > 0) {
+                  seen.add(key);
+                  const index = sources.length + 1;
+                  sources.push({
+                    id: `web-${index}`,
+                    index,
+                    type: 'web',
+                    title: item.title,
+                    source: item.source,
+                    url: item.url,
+                    snippet: item.snippet.length > 350 ? item.snippet.slice(0, 350) + '...' : item.snippet,
+                    materia: 'Web',
+                  });
+                }
+              });
+            } catch (webErr) {
+              console.warn('Web search failed or timed out:', webErr);
+            }
+          }
 
-    let scopeDescription = isGlobal
-      ? 'em todos os tópicos cadastrados no acervo global'
-      : `no tópico "${materia}"`;
+          // Envia as fontes avaliadas e filtradas para o cliente imediatamente
+          controller.enqueue(
+            encoder.encode(`event: sources\ndata: ${JSON.stringify(sources)}\n\n`)
+          );
 
-    if (shouldSearchWeb) {
-      scopeDescription += ' e com acesso a pesquisas na Web em tempo real';
-    }
+          sendStatus('✍️ Gerando resposta fundamentada...');
 
-    const prompt = PromptTemplate.fromTemplate(`
-Você é um assistente acadêmico especializado {scopeDescription}.
-Seu objetivo é ajudar o usuário a estudar, esclarecer dúvidas, estruturar respostas para fóruns acadêmicos, redações e atividades.
+          // 4. Histórico recente da conversa para contexto iterativo
+          const recentHistory = previousMessages.slice(-8);
+          const chatHistoryBlock =
+            recentHistory.length > 0
+              ? `Histórico recente da conversa:\n` +
+                recentHistory
+                  .map((m: any) => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`)
+                  .join('\n\n') +
+                '\n\n---\n'
+              : '';
+
+          // 5. Contexto das fontes com referências [1], [2]
+          const contextString =
+            sources.length > 0
+              ? sources
+                  .map((s) => {
+                    if (s.type === 'web') {
+                      return `[${s.index}] Fonte Web: ${s.title} (Origem: ${s.source} | URL: ${s.url})\nConteúdo: ${s.snippet}`;
+                    }
+                    return `[${s.index}] Documento: ${s.title} (Tópico: ${s.materia}${s.page ? ` | Pág. ${s.page}` : ''})\nConteúdo: ${s.snippet}`;
+                  })
+                  .join('\n\n---\n\n')
+              : 'Nenhum documento ou fonte web relevante encontrada.';
+
+          // 6. Configuração do LLM
+          const llm = new Ollama({
+            model: 'llama3',
+            baseUrl: 'http://localhost:11434',
+          });
+
+          let scopeDescription = isGlobal
+            ? 'em todos os tópicos cadastrados no acervo global'
+            : `no tópico "${materia}"`;
+
+          if (shouldSearchWeb) {
+            scopeDescription += ' e com acesso a pesquisas na Web em tempo real';
+          }
+
+          const technicalTermHint = ragResult.expansion?.termoTecnicoPrincipal
+            ? `Nota técnica de vocabulário do fabricante/manual: Termo técnico correspondente no acervo: "${ragResult.expansion.termoTecnicoPrincipal}". Se a pergunta usou termo popular (como "seta" ou "painel"), esclareça naturalmente ao usuário como o item é denominado no manual oficial para maior clareza.`
+            : '';
+
+          const prompt = PromptTemplate.fromTemplate(`
+Você é um assistente técnico e acadêmico especializado {scopeDescription}.
+Seu objetivo é ajudar o usuário com respostas precisas, claras e estritamente fundamentadas nas fontes consultadas.
+
+${technicalTermHint}
 
 Memória e Iteração da Conversa:
-Você tem acesso ao histórico desta conversa. Quando o usuário pedir para refinar, resumir, expandir, alterar o tom ou construir um texto (como para um fórum da faculdade) com base no que já foi discutido, utilize o histórico da conversa e as fontes consultadas para compor a resposta de forma coesa, precisa e bem fundamentada.
+Você tem acesso ao histórico desta conversa. Quando o usuário pedir para refinar, resumir, expandir, alterar o tom ou construir um texto com base no que já foi discutido, utilize o histórico da conversa e as fontes consultadas para compor a resposta de forma coesa, precisa e bem fundamentada.
 
 Diretriz de citação de fontes (estilo Perplexity):
-Ao mencionar fatos, dados ou informações extraídas das fontes (documentos ou web), cite a referência numérica entre colchetes como [1], [2] ao final da frase correspondente. Mantenha ou adapte as citações de fontes relevantes mesmo ao reformular o texto.
+Ao mencionar fatos, dados, orientações ou procedimentos extraídos das fontes (documentos ou web), cite a referência numérica entre colchetes como [1], [2] ao final da frase correspondente.
 
-Diretriz de formatação: Vá direto à explicação ou ao texto solicitado. NUNCA inicie sua resposta com títulos como "Resposta:", "**Resposta:**", "Resposta" ou repetindo a pergunta. Comece diretamente respondendo.
+Diretriz de precisão estrita:
+- NUNCA invente informações não presentes nas fontes ou no histórico.
+- Responda diretamente ao que foi perguntado.
+- NUNCA inicie sua resposta com títulos como "Resposta:", "**Resposta:**", "Resposta" ou repetindo a pergunta. Comece diretamente explicando.
 
 Contexto das Fontes:
 {context}
@@ -201,36 +206,34 @@ Mensagem atual do Usuário:
 {question}
 `);
 
-    const chain = RunnableSequence.from([
-      prompt,
-      llm,
-      new StringOutputParser(),
-    ]);
+          const chain = RunnableSequence.from([
+            prompt,
+            llm,
+            new StringOutputParser(),
+          ]);
 
-    const stream = await chain.stream({
-      context: contextString,
-      chatHistory: chatHistoryBlock,
-      question: currentMessageContent,
-      scopeDescription,
-    });
+          const stream = await chain.stream({
+            context: contextString,
+            chatHistory: chatHistoryBlock,
+            question: currentMessageContent,
+            scopeDescription,
+          });
 
-    // 5. Stream response via SSE with sources event followed by tokens
-    const encoder = new TextEncoder();
-    const readableStream = new ReadableStream({
-      async start(controller) {
-        // Enqueue sources first so the client can display sources immediately
-        controller.enqueue(
-          encoder.encode(`event: sources\ndata: ${JSON.stringify(sources)}\n\n`)
-        );
+          for await (const chunk of stream) {
+            controller.enqueue(
+              encoder.encode(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`)
+            );
+          }
 
-        for await (const chunk of stream) {
+          controller.enqueue(encoder.encode(`event: done\ndata: {}\n\n`));
+          controller.close();
+        } catch (streamErr: any) {
+          console.error('Error during streaming in /api/chat:', streamErr);
           controller.enqueue(
-            encoder.encode(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`)
+            encoder.encode(`event: error\ndata: ${JSON.stringify({ error: streamErr.message })}\n\n`)
           );
+          controller.close();
         }
-
-        controller.enqueue(encoder.encode(`event: done\ndata: {}\n\n`));
-        controller.close();
       },
     });
 
