@@ -3428,6 +3428,7 @@ body > div[id^="dmermaid_"] {
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 0.85rem;
   overflow: hidden;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
 }
 
 .html-preview-body {
@@ -3435,9 +3436,97 @@ body > div[id^="dmermaid_"] {
   width: 100%;
 }
 
+/* Responsive dark-mode container / sandbox stage */
+.html-sandbox-stage {
+  display: flex;
+  justify-content: center;
+  align-items: stretch;
+  background: #060913;
+  background-image: 
+    radial-gradient(circle at 50% 0%, rgba(59, 130, 246, 0.08), transparent 70%),
+    radial-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 100% 100%, 16px 16px;
+  min-height: 480px;
+  height: 520px;
+  position: relative;
+  overflow-x: auto;
+  overflow-y: hidden;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border-bottom-left-radius: 0.85rem;
+  border-bottom-right-radius: 0.85rem;
+}
+
+.html-sandbox-stage.stage-desktop {
+  padding: 0;
+  background: #ffffff;
+}
+
+.html-sandbox-stage.stage-tablet,
+.html-sandbox-stage.stage-mobile {
+  padding: 1.25rem 1rem;
+}
+
+/* Simulated device wrapper */
+.html-device-wrapper {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.html-device-wrapper.viewport-desktop {
+  width: 100%;
+  box-shadow: none;
+}
+
+.html-device-wrapper.viewport-tablet {
+  width: 768px;
+  max-width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+}
+
+.html-device-wrapper.viewport-mobile {
+  width: 375px;
+  max-width: 100%;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 20px 35px -10px rgba(0, 0, 0, 0.75);
+  overflow: hidden;
+}
+
+.html-device-statusbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #111827;
+  color: #94a3b8;
+  font-size: 0.68rem;
+  padding: 0.35rem 0.75rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  user-select: none;
+}
+
+.html-device-pill {
+  width: 36px;
+  height: 4px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.html-device-info {
+  font-family: Menlo, Monaco, Consolas, monospace;
+  font-size: 0.65rem;
+  letter-spacing: 0.02em;
+  color: #94a3b8;
+}
+
 .html-iframe-container {
   width: 100%;
-  height: 440px;
+  height: 480px;
   background: #ffffff;
   border-bottom-left-radius: 0.85rem;
   border-bottom-right-radius: 0.85rem;
@@ -3447,12 +3536,13 @@ body > div[id^="dmermaid_"] {
 .html-sandbox-iframe {
   width: 100%;
   height: 100%;
+  flex: 1;
   border: none;
   background: #ffffff;
 }
 
 .html-code-view {
-  max-height: 440px;
+  max-height: 520px;
   overflow: auto;
   padding: 1.25rem;
   margin: 0;
@@ -3461,6 +3551,87 @@ body > div[id^="dmermaid_"] {
   color: #e2e8f0;
   background: rgba(15, 23, 42, 0.95);
   line-height: 1.5;
+  border-bottom-left-radius: 0.85rem;
+  border-bottom-right-radius: 0.85rem;
+}
+
+/* Button groups and badges */
+.html-btn-group {
+  display: flex;
+  align-items: center;
+  background: rgba(15, 23, 42, 0.85);
+  padding: 2px;
+  border-radius: 0.5rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  gap: 2px;
+}
+
+.html-mode-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 0.375rem;
+  border: 1px solid transparent;
+  color: #94a3b8;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.html-mode-btn:hover {
+  color: #f1f5f9;
+}
+
+.html-mode-btn.active {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
+.html-viewport-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  border-radius: 0.375rem;
+  border: 1px solid transparent;
+  color: #94a3b8;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.html-viewport-btn:hover {
+  color: #f1f5f9;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.html-viewport-btn.active {
+  background: rgba(59, 130, 246, 0.22);
+  border-color: rgba(59, 130, 246, 0.45);
+  color: #60a5fa;
+  font-weight: 600;
+}
+
+.html-viewport-badge {
+  font-size: 0.68rem;
+  background: rgba(59, 130, 246, 0.15);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+  padding: 0.1rem 0.5rem;
+  border-radius: 9999px;
+  font-weight: 500;
+}
+
+.table-action-btn.downloaded {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #34d399;
 }
 
 /* ==========================================================================
@@ -3506,3 +3677,175 @@ body > div[id^="dmermaid_"] {
   align-items: center;
   gap: 0.25rem;
 }
+
+/* Enhanced Badges for Image Viewer */
+.image-preset-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.2rem 0.6rem;
+  border-radius: 9999px;
+  border-width: 1px;
+  border-style: solid;
+  transition: all 0.2s ease;
+  letter-spacing: 0.02em;
+}
+
+.image-ratio-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 500;
+  padding: 0.2rem 0.55rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #cbd5e1;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.image-dimensions-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.65rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  padding: 0.18rem 0.5rem;
+  border-radius: 0.35rem;
+  background: rgba(0, 0, 0, 0.3);
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.image-download-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.35rem 0.75rem;
+  border-radius: 0.45rem;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #f1f5f9;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.image-download-btn:hover:not(:disabled) {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #93c5fd;
+}
+
+.image-download-btn.downloading {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: rgba(59, 130, 246, 0.35);
+  color: #93c5fd;
+  cursor: wait;
+}
+
+.image-download-btn.success {
+  background: rgba(16, 185, 129, 0.18);
+  border-color: rgba(16, 185, 129, 0.45);
+  color: #34d399;
+}
+
+.image-download-btn.error {
+  background: rgba(239, 68, 68, 0.18);
+  border-color: rgba(239, 68, 68, 0.4);
+  color: #f87171;
+}
+
+/* Zoom Modal Styles */
+.image-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(2, 6, 23, 0.92);
+  backdrop-filter: blur(16px);
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  animation: fadeIn 0.2s ease forwards;
+}
+
+.image-zoom-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.5rem;
+  background: rgba(15, 23, 42, 0.85);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(12px);
+  z-index: 10;
+  gap: 1rem;
+}
+
+.image-zoom-viewport {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: auto;
+  padding: 1.5rem;
+  position: relative;
+}
+
+.image-zoom-img {
+  max-width: 90vw;
+  max-height: 80vh;
+  object-fit: contain;
+  border-radius: 0.75rem;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.1);
+  transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1);
+  user-select: none;
+}
+
+.image-zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: rgba(30, 41, 59, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.5rem;
+  padding: 0.2rem;
+}
+
+.image-zoom-control-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  padding: 0.35rem 0.5rem;
+  border-radius: 0.35rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 500;
+  transition: all 0.15s ease;
+}
+
+.image-zoom-control-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  color: #f8fafc;
+}
+
+.image-zoom-control-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.image-zoom-caption {
+  padding: 0.75rem 1.5rem;
+  background: rgba(15, 23, 42, 0.85);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: #94a3b8;
+  font-size: 0.8rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+

@@ -70,9 +70,19 @@ FERRAMENTA HABILITADA: EXPORTADOR DE DOCUMENTOS PDF (📄)
 FERRAMENTA HABILITADA: GERADOR DE IMAGENS & ILUSTRAÇÕES (🎨)
 - Você pode criar e inserir imagens e ilustrações conceituais para enriquecer o estudo ou explicar visualmente o tema.
 - Para gerar uma imagem, insira no seu texto o formato Markdown apontando para o gerador visual de alta resolução:
-![Descrição concisa em português](https://image.pollinations.ai/prompt/{prompt_em_ingles_descritivo_e_detalhado}?width=1024&height=768&nologo=true)
-- IMPORTANTE: No parâmetro do prompt na URL, escreva SEMPRE em inglês rico em detalhes descritivos e estéticos (ex: "detailed educational illustration of human circulatory system, medical textbook style, clean 3d render, high quality").
-- O chat renderizará um Card Visual completo com imagem, zoom e botão de download em alta resolução.
+![Descrição concisa em português](https://image.pollinations.ai/prompt/{prompt_em_ingles_descritivo_e_detalhado}?width=1280&height=720&nologo=true)
+- PROPORÇÕES DE TELA (Width x Height):
+  * 16:9 (Panorâmico): width=1280&height=720
+  * 4:3 (Editorial / Didático): width=1024&height=768
+  * 1:1 (Quadrado): width=1024&height=1024
+  * 9:16 (Vertical / Mobile): width=720&height=1280
+- PRESETS DE ESTILOS RECOMENDADOS (escreva no prompt em inglês):
+  * "scientific": detailed academic diagram, medical/anatomical illustration, clean textbook style
+  * "photorealistic": 8k photography, cinematic natural lighting, highly detailed textures
+  * "digital_art": stunning digital concept art, trending on ArtStation, dynamic volumetric lighting
+  * "infographic": educational infographic, structured visual flowchart, clean iconography
+  * "minimalist_vector": flat minimalist vector art, clean geometric design, modern SVG aesthetic
+- O chat renderizará um Card Visual completo com badges de estilo, proporção e dimensões, modal de zoom interativo e botão de download em 1 clique com feedback visual.
 `,
   },
   {
