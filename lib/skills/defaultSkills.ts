@@ -7,6 +7,7 @@ export const DEFAULT_SKILLS: CustomSkill[] = [
     icon: '💬',
     description: 'Formata a resposta no padrão acadêmico de fórum universitário, com posicionamento, fundamentação crítica e pergunta para debate.',
     category: 'academico',
+    tools: ['tool_web_search'],
     isBuiltIn: true,
     promptInstruction: `
 SKILL ATIVADA: FORMATADOR DE FÓRUM AVALIATIVO (💬)
@@ -31,6 +32,7 @@ DIRETRIZES OBRIGATÓRIAS:
     icon: '🗂️',
     description: 'Transforma a aula e os documentos em um deck de memorização ativa (Active Recall) com perguntas, respostas e macetes mnemônicos.',
     category: 'estudo',
+    tools: ['tool_generate_pdf'],
     isBuiltIn: true,
     promptInstruction: `
 SKILL ATIVADA: GERADOR DE FLASHCARDS DE ESTUDO (🗂️)
@@ -64,19 +66,19 @@ Regras adicionais:
     id: 'skill_simulado',
     name: 'Simulado de Prova',
     icon: '📝',
-    description: 'Elabora questões inéditas de múltipla escolha no padrão de provas universitárias e concursos, com gabarito comentado e análise de pegadinhas.',
+    description: 'Cria questionários de múltipla escolha no estilo ENADE/concursos com gabarito oficial comentado e análise de pegadinhas.',
     category: 'estudo',
+    tools: ['tool_generate_pdf'],
     isBuiltIn: true,
     promptInstruction: `
-SKILL ATIVADA: GERADOR DE SIMULADO E AVALIAÇÕES (📝)
-Sua missão é atuar como uma banca examinadora rigorosa e formular um Simulado de Prova inédito (3 a 5 questões) com base estrita no acervo documental consultado.
+SKILL ATIVADA: GERADOR DE SIMULADOS & QUESTÕES DE PROVA (📝)
+Sua missão é criar um Simulado de Avaliação com 3 a 5 questões objetivas de múltipla escolha (A, B, C, D, E) rigorosamente alinhadas às fontes oficiais.
 
 DIRETRIZES OBRIGATÓRIAS:
 1. IDIOMA: Escreva SEMPRE em Português do Brasil (pt-BR).
 
 FORMATO OBRIGATÓRIO:
-1. **Questões:**
-Para cada questão, forneça:
+1. **Bloco de Questões:**
 \`\`\`markdown
 #### Questão {N} • [Nível: Fácil / Médio / Difícil]
 **Contexto / Enunciado:** {Apresente uma situação-problema prática ou enunciado contextualizado baseado no tema estudado}
@@ -108,6 +110,7 @@ E) {Alternativa E}
     icon: '🧠',
     description: 'Estrutura o tema em árvore hierárquica e conexões conceituais com diagrama Mermaid renderizável e síntese dos eixos.',
     category: 'visual',
+    tools: ['tool_diagram', 'tool_generate_pdf'],
     isBuiltIn: true,
     promptInstruction: `
 SKILL ATIVADA: CRIADOR DE MAPA MENTAL VISUAL (🧠)
@@ -150,6 +153,7 @@ mindmap
     icon: '📊',
     description: 'Sintetiza a aula em um resumo executivo visual estilo One-Pager com métricas, etapas, blocos de atenção e pegadinhas.',
     category: 'visual',
+    tools: ['tool_diagram', 'tool_generate_image', 'tool_generate_pdf'],
     isBuiltIn: true,
     promptInstruction: `
 SKILL ATIVADA: INFOGRÁFICO EXECUTIVO DA AULA (📊)
@@ -179,5 +183,47 @@ ESTRUTURA OBRIGATÓRIA:
 `,
     createdAt: 1700000000014,
     updatedAt: 1700000000014,
+  },
+  {
+    id: 'skill_html_page',
+    name: 'Criador de Web Apps & HTML',
+    icon: '🌐',
+    description: 'Gera interfaces web interativas (HTML5, CSS moderno e JavaScript funcional) com visualização em Sandbox no chat.',
+    category: 'produtividade',
+    tools: ['tool_html_preview', 'tool_web_search'],
+    isBuiltIn: true,
+    promptInstruction: `
+SKILL ATIVADA: CRIADOR DE WEB APPS & INTERFACES HTML (🌐)
+Sua missão é construir protótipos visuais, dashboards, páginas informativas, componentes interativos ou calculadoras em HTML5 completo.
+
+DIRETRIZES OBRIGATÓRIAS:
+1. IDIOMA: Escreva SEMPRE em Português do Brasil (pt-BR).
+2. O código HTML deve ser 100% autocontido, moderno, responsivo e com CSS embutido em <style> e interatividade em <script>.
+3. O código deve ser inserido em bloco \`\`\`html.
+4. Explique brevemente o funcionamento da interface antes ou depois do bloco de código.
+`,
+    createdAt: 1700000000015,
+    updatedAt: 1700000000015,
+  },
+  {
+    id: 'skill_gerador_imagens',
+    name: 'Ilustrador Visual & Educativo',
+    icon: '🎨',
+    description: 'Gera ilustrações conceituais, fotos e desenhos explicativos para enriquecer o aprendizado visual.',
+    category: 'visual',
+    tools: ['tool_generate_image', 'tool_diagram', 'tool_generate_pdf'],
+    isBuiltIn: true,
+    promptInstruction: `
+SKILL ATIVADA: ILUSTRADOR VISUAL & EDUCATIVO (🎨)
+Sua missão é explicar os conceitos unindo texto fundamentado nas fontes e ilustrações visuais geradas por IA.
+
+DIRETRIZES OBRIGATÓRIAS:
+1. IDIOMA: Escreva em Português do Brasil (pt-BR).
+2. Para cada conceito principal que se beneficie de ilustração, insira uma imagem usando a ferramenta de geração visual:
+![Título da Ilustração em Português](https://image.pollinations.ai/prompt/{prompt_em_ingles_detalhado}?width=1024&height=768&nologo=true)
+3. O prompt na URL deve ser sempre em inglês técnico e artístico de alta qualidade (ex: "educational diagram of cell structure, colorful 3d digital rendering, scientific accuracy, clean white background").
+`,
+    createdAt: 1700000000016,
+    updatedAt: 1700000000016,
   },
 ];

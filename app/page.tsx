@@ -39,7 +39,12 @@ import {
   QuizWidget,
   InfographicWidget,
   TableWidget,
+  HtmlPreviewWidget,
+  ImageViewerWidget,
+  PdfExportButton,
 } from './components/genui';
+import { AVAILABLE_TOOLS, AvailableToolId } from '@/lib/tools/catalog';
+
 
 type Message = {
   id: string;
@@ -137,12 +142,17 @@ function AssistantMessage({
   // Markdown custom components (reutilizados para tabelas e citações)
   const markdownComponents = {
     table: ({ children, ...props }: any) => <TableWidget {...props}>{children}</TableWidget>,
+    img: ({ src, alt, title }: any) => <ImageViewerWidget src={src} alt={alt} title={title} />,
     code: ({ className, children, ...props }: any) => {
       const match = /language-(\w+)/.exec(className || '');
       const lang = match ? match[1] : '';
 
       if (lang === 'mermaid') {
         return <MermaidChart chart={String(children).replace(/\n$/, '')} />;
+      }
+
+      if (lang === 'html') {
+        return <HtmlPreviewWidget html={String(children).replace(/\n$/, '')} />;
       }
 
       if (lang === 'genui-flashcards' || lang === 'genui_flashcards') {
@@ -314,6 +324,12 @@ function AssistantMessage({
               {processedContent}
             </ReactMarkdown>
           )}
+
+          {cleanContent && (
+            <div className="flex items-center justify-end mt-2 pt-1 border-t border-slate-800/40">
+              <PdfExportButton content={cleanContent} />
+            </div>
+          )}
         </div>
       ) : (
         <div className="agent-thinking-card">
@@ -362,6 +378,7 @@ export default function ChatApp() {
   const [skillFormDesc, setSkillFormDesc] = useState('');
   const [skillFormCategory, setSkillFormCategory] = useState<'academico' | 'estudo' | 'visual' | 'produtividade'>('estudo');
   const [skillFormPrompt, setSkillFormPrompt] = useState('');
+  const [skillFormTools, setSkillFormTools] = useState<AvailableToolId[]>([]);
 
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -633,6 +650,7 @@ Estrutura recomendada para a resposta do Fórum:
     setSkillFormDesc('');
     setSkillFormCategory('estudo');
     setSkillFormPrompt('');
+    setSkillFormTools(['tool_generate_pdf']);
     setIsEditingSkill(true);
     setShowSkillsModal(true);
   };
@@ -644,6 +662,7 @@ Estrutura recomendada para a resposta do Fórum:
     setSkillFormDesc(skill.description);
     setSkillFormCategory(skill.category);
     setSkillFormPrompt(skill.promptInstruction);
+    setSkillFormTools(skill.tools || []);
     setIsEditingSkill(true);
     setShowSkillsModal(true);
   };
@@ -664,6 +683,7 @@ Estrutura recomendada para a resposta do Fórum:
             description: skillFormDesc.trim(),
             category: skillFormCategory,
             promptInstruction: skillFormPrompt.trim(),
+            tools: skillFormTools,
           }),
         });
         if (!res.ok) throw new Error('Erro ao salvar alterações da skill');
@@ -677,6 +697,7 @@ Estrutura recomendada para a resposta do Fórum:
             description: skillFormDesc.trim(),
             category: skillFormCategory,
             promptInstruction: skillFormPrompt.trim(),
+            tools: skillFormTools,
           }),
         });
         const data = await res.json();
@@ -687,6 +708,7 @@ Estrutura recomendada para a resposta do Fórum:
       await fetchSkills();
       setIsEditingSkill(false);
       setShowSkillsModal(false);
+
     } catch (err: any) {
       alert(err.message || 'Erro ao salvar skill');
     }
@@ -2106,6 +2128,20 @@ Estrutura recomendada para a resposta do Fórum:
                           <div className="agent-manage-desc">
                             {sk.description || 'Sem descrição.'}
                           </div>
+                          {sk.tools && sk.tools.length > 0 && (
+                            <div className="flex items-center gap-1.5 mt-2 flex-wrap">
+                              {sk.tools.map((tid) => {
+                                const tDef = AVAILABLE_TOOLS.find((t) => t.id === tid);
+                                if (!tDef) return null;
+                                return (
+                                  <span key={tid} className="tool-badge-pill" title={tDef.description}>
+                                    <span>{tDef.icon}</span>
+                                    <span>{tDef.name.split('/')[0].trim()}</span>
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -2236,6 +2272,52 @@ Estrutura recomendada para a resposta do Fórum:
                     rows={8}
                     required
                   />
+                </div>
+
+                <div className="agent-form-group">
+                  <label className="agent-form-label">
+                    🛠️ Ferramentas Habilitadas (Tools)
+                  </label>
+                  <span className="agent-form-hint">
+                    Marque os recursos adicionais que o modelo terá permissão para usar ao executar esta skill.
+                  </span>
+                  <div className="flex flex-col gap-2 mt-2">
+                    {AVAILABLE_TOOLS.map((tool) => {
+                      const isChecked = skillFormTools.includes(tool.id);
+                      return (
+                        <label
+                          key={tool.id}
+                          className={`flex items-start gap-3 p-2.5 rounded-lg border cursor-pointer transition ${
+                            isChecked
+                              ? 'bg-slate-800/90 border-amber-500/50 text-slate-100 shadow-sm'
+                              : 'bg-slate-900/50 border-slate-700/50 text-slate-400 hover:border-slate-600'
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSkillFormTools((prev) => [...prev, tool.id]);
+                              } else {
+                                setSkillFormTools((prev) => prev.filter((id) => id !== tool.id));
+                              }
+                            }}
+                            className="mt-1 rounded border-slate-700 text-amber-500 focus:ring-amber-500"
+                          />
+                          <div className="flex-1">
+                            <div className="flex items-center gap-1.5 font-semibold text-xs text-slate-200">
+                              <span>{tool.icon}</span>
+                              <span>{tool.name}</span>
+                            </div>
+                            <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">
+                              {tool.description}
+                            </p>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div className="modal-actions">

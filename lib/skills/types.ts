@@ -1,3 +1,5 @@
+import { AvailableToolId } from '../tools/catalog';
+
 export type SkillCategory = 'academico' | 'estudo' | 'visual' | 'produtividade';
 
 export type CustomSkill = {
@@ -7,7 +9,9 @@ export type CustomSkill = {
   description: string;
   category: SkillCategory;
   promptInstruction: string;
+  tools?: AvailableToolId[];
   isBuiltIn?: boolean;
   createdAt: number;
   updatedAt: number;
 };
+

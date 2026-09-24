@@ -10,6 +10,7 @@ import { CustomAgent } from '@/lib/agents/types';
 import { DEFAULT_AGENTS } from '@/lib/agents/defaultAgents';
 import { CustomSkill } from '@/lib/skills/types';
 import { DEFAULT_SKILLS } from '@/lib/skills/defaultSkills';
+import { AVAILABLE_TOOLS, AvailableToolId } from '@/lib/tools/catalog';
 
 export type ChatSource = {
   id: string;
@@ -75,8 +76,27 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Identifica ferramentas habilitadas (via Skill ou intenção explícita na mensagem)
+    const activeToolIds = new Set<AvailableToolId>(activeSkill?.tools || []);
+
+    const lowerMsg = currentMessageContent.toLowerCase();
+    if (lowerMsg.includes('html') || lowerMsg.includes('web app') || lowerMsg.includes('página web') || lowerMsg.includes('interface web')) {
+      activeToolIds.add('tool_html_preview');
+    }
+    if (lowerMsg.includes('imagem') || lowerMsg.includes('ilustração') || lowerMsg.includes('desenhe') || lowerMsg.includes('desenho') || lowerMsg.includes('foto')) {
+      activeToolIds.add('tool_generate_image');
+    }
+    if (lowerMsg.includes('pdf') || lowerMsg.includes('apostila') || lowerMsg.includes('imprimir') || lowerMsg.includes('relatório')) {
+      activeToolIds.add('tool_generate_pdf');
+    }
+    if (lowerMsg.includes('diagrama') || lowerMsg.includes('fluxograma') || lowerMsg.includes('mapa mental') || lowerMsg.includes('mindmap')) {
+      activeToolIds.add('tool_diagram');
+    }
+
+    const activeToolDefs = AVAILABLE_TOOLS.filter((t) => activeToolIds.has(t.id));
+
     const isGlobal = consultMateria === 'Geral';
-    const shouldSearchWeb = Boolean(webSearch) || detectWebSearchIntent(currentMessageContent);
+    const shouldSearchWeb = Boolean(webSearch) || detectWebSearchIntent(currentMessageContent) || activeToolIds.has('tool_web_search');
 
     const encoder = new TextEncoder();
     const readableStream = new ReadableStream({
@@ -97,6 +117,11 @@ export async function POST(req: NextRequest) {
 
           if (activeSkill) {
             sendStatus(`⚡ [Skill: ${activeSkill.name}] ${activeSkill.icon} Aplicando diretrizes de formatação especializada...`);
+          }
+
+          if (activeToolDefs.length > 0) {
+            const toolBadges = activeToolDefs.map((t) => `${t.icon} ${t.name}`).join(' • ');
+            sendStatus(`🛠️ [Tools Ativadas] ${toolBadges}`);
           }
 
           if (consultMateria !== 'Geral') {
@@ -236,10 +261,21 @@ Responda EXCLUSIVAMENTE sobre o novo assunto solicitado. NUNCA misture nem respo
             ? `\n=======================================================\nDIRETRIZES DA SKILL ESPECIALIZADA ATIVADA (${activeSkill.name} ${activeSkill.icon}):\n${activeSkill.promptInstruction}\n=======================================================\n`
             : '';
 
+          let toolsInstructionBlock = '';
+          if (activeToolDefs.length > 0) {
+            toolsInstructionBlock =
+              `\n=======================================================\nFERRAMENTAS (TOOLS) HABILITADAS PARA USO:\n` +
+              activeToolDefs
+                .map((t) => `• [${t.name} ${t.icon}]:\n${t.systemPromptInstruction.trim()}`)
+                .join('\n\n') +
+              `\n=======================================================\n`;
+          }
+
           const prompt = PromptTemplate.fromTemplate(`
 ${agentPromptTemplate}
 
 {skillInstruction}
+{toolsInstruction}
 {technicalTermHint}
 {topicTransitionHint}
 
@@ -252,6 +288,7 @@ Abaixo estão os trechos e fontes oficiais levantados pelo especialista no acerv
 DIRETRIZES DE EXECUÇÃO:
 - Assuma integralmente a sua persona, tom de voz e regras descritas no seu prompt acima.
 - Se uma SKILL especializada estiver ativada acima, siga RIGOROSAMENTE todas as diretrizes de formato, estrutura e regras da skill.
+- Se FERRAMENTAS (TOOLS) estiverem habilitadas acima, utilize-as quando o formato exigir (ex: blocos de código html para páginas, links de imagem para ilustrações, diagramas mermaid).
 - Utilize com rigor os dados e orientações fornecidos pelo especialista na "CONSULTA TÉCNICA" para fundamentar a resposta.
 - Ao citar fatos, procedimentos ou dados das fontes, inclua a referência numérica entre colchetes como [1], [2] ao final da frase correspondente.
 - NUNCA invente informações não presentes nas fontes ou no histórico.
@@ -277,6 +314,7 @@ Mensagem atual do Usuário:
             technicalTermHint,
             topicTransitionHint,
             skillInstruction: skillInstructionBlock,
+            toolsInstruction: toolsInstructionBlock,
           });
 
           for await (const chunk of stream) {

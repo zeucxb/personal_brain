@@ -29,6 +29,7 @@ export async function GET(req: NextRequest) {
                 description: def.description,
                 category: def.category,
                 promptInstruction: def.promptInstruction,
+                tools: def.tools || [],
               },
             }
           );
@@ -47,7 +48,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { name, icon, description, category, promptInstruction } = body;
+    const { name, icon, description, category, promptInstruction, tools } = body;
 
     if (!name || !name.trim() || !promptInstruction || !promptInstruction.trim()) {
       return NextResponse.json(
@@ -70,6 +71,7 @@ export async function POST(req: NextRequest) {
       description: description?.trim() || '',
       category: category || 'estudo',
       promptInstruction: promptInstruction.trim(),
+      tools: Array.isArray(tools) ? tools : [],
       createdAt: now,
       updatedAt: now,
       isBuiltIn: false,
@@ -86,7 +88,7 @@ export async function POST(req: NextRequest) {
 export async function PUT(req: NextRequest) {
   try {
     const body = await req.json();
-    const { id, name, icon, description, category, promptInstruction } = body;
+    const { id, name, icon, description, category, promptInstruction, tools } = body;
 
     if (!id) {
       return NextResponse.json({ error: 'ID da skill é obrigatório.' }, { status: 400 });
@@ -105,6 +107,7 @@ export async function PUT(req: NextRequest) {
     if (description !== undefined) updateFields.description = description.trim();
     if (category) updateFields.category = category;
     if (promptInstruction) updateFields.promptInstruction = promptInstruction.trim();
+    if (tools !== undefined) updateFields.tools = Array.isArray(tools) ? tools : [];
 
     await collection.updateOne({ id }, { $set: updateFields });
     return NextResponse.json({ success: true });

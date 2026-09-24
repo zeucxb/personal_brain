@@ -3,3 +3,6 @@ export * from './FlashcardsWidget';
 export * from './QuizWidget';
 export * from './InfographicWidget';
 export * from './TableWidget';
+export * from './HtmlPreviewWidget';
+export * from './ImageViewerWidget';
+export * from './PdfExportButton';
