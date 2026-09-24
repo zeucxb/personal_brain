@@ -915,4 +915,202 @@ body {
   border-radius: 0.35rem;
 }
 
+/* ==========================================================================
+   Perplexity-Style Sources Component Styles
+   ========================================================================== */
+.sources-container {
+  margin-bottom: 1rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.sources-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.6rem;
+}
+
+.sources-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.sources-icon {
+  color: var(--accent);
+}
+
+.sources-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.source-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  max-width: 230px;
+  min-width: 140px;
+  flex: 1 1 180px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.source-card:hover {
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.4);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+}
+
+.source-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  overflow: hidden;
+}
+
+.source-index {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(59, 130, 246, 0.15);
+  padding: 0.1rem 0.35rem;
+  border-radius: 0.25rem;
+  flex-shrink: 0;
+}
+
+.source-type-icon.doc {
+  color: #60a5fa;
+  flex-shrink: 0;
+}
+
+.source-type-icon.web {
+  color: #34d399;
+  flex-shrink: 0;
+}
+
+.source-name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-main);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.source-link {
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  transition: color 0.15s;
+}
+
+.source-link:hover {
+  color: var(--accent);
+}
+
+.source-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  overflow: hidden;
+}
+
+.source-meta-tag {
+  font-size: 0.65rem;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.06);
+  padding: 0.08rem 0.35rem;
+  border-radius: 0.25rem;
+  font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.source-meta-tag.web-tag {
+  color: #34d399;
+  background: rgba(16, 185, 129, 0.12);
+}
+
+.source-snippet-preview {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+/* Modal de Detalhe da Fonte */
+.modal-source-detail {
+  width: 580px;
+  max-width: 90vw;
+}
+
+.source-modal-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.source-index-large {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--accent);
+  background: rgba(59, 130, 246, 0.15);
+  padding: 0.25rem 0.6rem;
+  border-radius: 0.4rem;
+  flex-shrink: 0;
+}
+
+.source-modal-title h4 {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 0.25rem;
+  word-break: break-all;
+}
+
+.source-modal-body {
+  margin-bottom: 1.5rem;
+}
+
+.source-body-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 0.6rem;
+}
+
+.source-snippet-quote {
+  background: #090d16;
+  border: 1px solid var(--panel-border);
+  border-left: 4px solid var(--accent);
+  border-radius: 0.5rem;
+  padding: 1.1rem;
+  color: #e2e8f0;
+  font-size: 0.88rem;
+  line-height: 1.65;
+  max-height: 280px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-style: normal;
+}
+
+
 

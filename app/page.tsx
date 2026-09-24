@@ -15,10 +15,13 @@ import {
   Globe,
 } from 'lucide-react';
 
+import SourcesList, { ChatSource } from './components/SourcesList';
+
 type Message = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  sources?: ChatSource[];
 };
 
 type Conversation = {
@@ -225,26 +228,69 @@ export default function ChatApp() {
       const decoder = new TextDecoder();
       let done = false;
 
+      let buffer = '';
       let accumulatedText = '';
+      let capturedSources: ChatSource[] = [];
+
       while (!done) {
         const { value, done: doneReading } = await reader.read();
         done = doneReading;
         if (value) {
-          const chunkValue = decoder.decode(value, { stream: !done });
-          accumulatedText += chunkValue;
+          buffer += decoder.decode(value, { stream: !done });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
 
-          const cleanedCurrent = cleanAiResponse(accumulatedText);
-          setConversations((prev) =>
-            prev.map((c) => {
-              if (c.id !== activeConversation.id) return c;
-              return {
-                ...c,
-                messages: c.messages.map((m) =>
-                  m.id === botMsgId ? { ...m, content: cleanedCurrent } : m
-                ),
-              };
-            })
-          );
+          let currentEvent = 'message';
+          let hasChange = false;
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed) continue;
+
+            if (trimmed.startsWith('event:')) {
+              currentEvent = trimmed.slice(6).trim();
+            } else if (trimmed.startsWith('data:')) {
+              const dataStr = trimmed.slice(5).trim();
+              try {
+                const data = JSON.parse(dataStr);
+                if (currentEvent === 'sources') {
+                  capturedSources = data;
+                  hasChange = true;
+                } else if (currentEvent === 'token') {
+                  if (data.text) {
+                    accumulatedText += data.text;
+                    hasChange = true;
+                  }
+                }
+              } catch (e) {
+                if (currentEvent === 'token' || currentEvent === 'message') {
+                  accumulatedText += dataStr;
+                  hasChange = true;
+                }
+              }
+            }
+          }
+
+          if (hasChange) {
+            const cleanedCurrent = cleanAiResponse(accumulatedText);
+            setConversations((prev) =>
+              prev.map((c) => {
+                if (c.id !== activeConversation.id) return c;
+                return {
+                  ...c,
+                  messages: c.messages.map((m) =>
+                    m.id === botMsgId
+                      ? {
+                          ...m,
+                          content: cleanedCurrent,
+                          sources: capturedSources.length > 0 ? capturedSources : m.sources,
+                        }
+                      : m
+                  ),
+                };
+              })
+            );
+          }
         }
       }
 
@@ -255,7 +301,12 @@ export default function ChatApp() {
         title: newTitle,
         messages: activeConversation.messages
           .concat(userMsg)
-          .concat({ id: botMsgId, role: 'assistant', content: finalCleanedText }),
+          .concat({
+            id: botMsgId,
+            role: 'assistant',
+            content: finalCleanedText,
+            sources: capturedSources,
+          }),
         updatedAt: Date.now(),
       };
       saveConversationToDb(finalConv);
@@ -564,19 +615,24 @@ export default function ChatApp() {
             currentMessages.map((msg) => (
               <div key={msg.id} className={`message ${msg.role}`}>
                 {msg.role === 'assistant' ? (
-                  msg.content ? (
-                    <div className="markdown-content">
-                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {cleanAiResponse(msg.content)}
-                      </ReactMarkdown>
-                    </div>
-                  ) : (
-                    <div className="typing-indicator">
-                      <span></span>
-                      <span></span>
-                      <span></span>
-                    </div>
-                  )
+                  <>
+                    {msg.sources && msg.sources.length > 0 && (
+                      <SourcesList sources={msg.sources} />
+                    )}
+                    {msg.content ? (
+                      <div className="markdown-content">
+                        <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                          {cleanAiResponse(msg.content)}
+                        </ReactMarkdown>
+                      </div>
+                    ) : (
+                      <div className="typing-indicator">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                      </div>
+                    )}
+                  </>
                 ) : (
                   msg.content
                 )}

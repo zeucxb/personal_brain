@@ -7,16 +7,16 @@ import { PromptTemplate } from '@langchain/core/prompts';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
 
-function formatDocumentsAsString(documents: any[]) {
-  if (!documents || documents.length === 0) return 'Nenhum documento encontrado.';
-  return documents
-    .map((doc) => {
-      const src = doc.metadata?.source || doc.source || 'Desconhecido';
-      const mat = doc.metadata?.materia || doc.materia ? ` | Matéria: ${doc.metadata?.materia || doc.materia}` : '';
-      return `[Documento: ${src}${mat}]\n${doc.pageContent}`;
-    })
-    .join('\n\n---\n\n');
-}
+export type ChatSource = {
+  id: string;
+  index: number;
+  type: 'document' | 'web';
+  title: string;
+  source: string;
+  url?: string;
+  snippet: string;
+  materia?: string;
+};
 
 export async function POST(req: NextRequest) {
   try {
@@ -51,6 +51,52 @@ export async function POST(req: NextRequest) {
       k: 5,
     });
 
+    // 1. Retrieve documents from Vector Store
+    let retrievedDocs: any[] = [];
+    try {
+      retrievedDocs = await retriever.invoke(currentMessageContent);
+    } catch (err) {
+      console.warn('Retriever fallback:', err);
+    }
+
+    // 2. Format structured generic sources (Perplexity style)
+    const sources: ChatSource[] = [];
+    const seen = new Set<string>();
+
+    retrievedDocs.forEach((doc) => {
+      const srcName = doc.metadata?.source || doc.source || 'Documento';
+      const docMateria = doc.metadata?.materia || doc.materia || materia;
+      const snippet = doc.pageContent ? doc.pageContent.trim() : '';
+
+      // Avoid duplicate cards for same document and same snippet start
+      const key = `${srcName}-${snippet.slice(0, 60)}`;
+      if (!seen.has(key) && snippet.length > 0) {
+        seen.add(key);
+        const index = sources.length + 1;
+        sources.push({
+          id: `src-${index}`,
+          index,
+          type: 'document',
+          title: srcName,
+          source: srcName,
+          snippet: snippet.length > 350 ? snippet.slice(0, 350) + '...' : snippet,
+          materia: docMateria,
+        });
+      }
+    });
+
+    // 3. Format context string with [1], [2] labels for LLM grounding
+    const contextString =
+      sources.length > 0
+        ? sources
+            .map(
+              (s) =>
+                `[${s.index}] Documento: ${s.title} (Matéria: ${s.materia})\nConteúdo: ${s.snippet}`
+            )
+            .join('\n\n---\n\n')
+        : 'Nenhum documento encontrado.';
+
+    // 4. Setup Ollama LLM
     const llm = new Ollama({
       model: 'llama3',
       baseUrl: 'http://localhost:11434',
@@ -63,9 +109,12 @@ export async function POST(req: NextRequest) {
     const prompt = PromptTemplate.fromTemplate(`
 Você é um assistente acadêmico especializado {scopeDescription}.
 Responda à pergunta do usuário baseando-se no contexto extraído dos documentos abaixo. Se não houver contexto suficiente ou nenhum documento relevante, informe educadamente que ainda não há documentos sobre o assunto cadastrados.
-Seja claro, educado e use formatação Markdown quando necessário. Sempre que usar informações dos documentos, cite o documento e a matéria de onde a informação foi extraída.
+Seja claro, educado e use formatação Markdown quando necessário.
 
-Diretriz importante de formatação: Vá direto à explicação. NUNCA inicie sua resposta com títulos como "Resposta:", "**Resposta:**", "Resposta" ou repetindo a pergunta. Comece diretamente respondendo.
+Diretriz de citação de fontes (estilo Perplexity):
+Ao mencionar fatos ou informações extraídas dos documentos, cite a referência numérica entre colchetes como [1], [2] ao final da frase correspondente.
+
+Diretriz de formatação: Vá direto à explicação. NUNCA inicie sua resposta com títulos como "Resposta:", "**Resposta:**", "Resposta" ou repetindo a pergunta. Comece diretamente respondendo.
 
 Contexto dos Documentos:
 {context}
@@ -75,45 +124,46 @@ Pergunta:
 `);
 
     const chain = RunnableSequence.from([
-      {
-        context: async (input: { question: string; materia: string }) => {
-          try {
-            const docs = await retriever.invoke(input.question);
-            return formatDocumentsAsString(docs);
-          } catch (err) {
-            console.warn('Retriever fallback:', err);
-            return 'Nenhum documento encontrado.';
-          }
-        },
-        question: (input: { question: string; materia: string }) => input.question,
-        materia: (input: { question: string; materia: string }) => input.materia,
-        scopeDescription: () => scopeDescription,
-      },
       prompt,
       llm,
       new StringOutputParser(),
     ]);
 
     const stream = await chain.stream({
+      context: contextString,
       question: currentMessageContent,
-      materia,
+      scopeDescription,
     });
 
+    // 5. Stream response via SSE with sources event followed by tokens
     const encoder = new TextEncoder();
     const readableStream = new ReadableStream({
       async start(controller) {
+        // Enqueue sources first so the client can display sources immediately
+        controller.enqueue(
+          encoder.encode(`event: sources\ndata: ${JSON.stringify(sources)}\n\n`)
+        );
+
         for await (const chunk of stream) {
-          controller.enqueue(encoder.encode(chunk));
+          controller.enqueue(
+            encoder.encode(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`)
+          );
         }
+
+        controller.enqueue(encoder.encode(`event: done\ndata: {}\n\n`));
         controller.close();
       },
     });
 
     return new Response(readableStream, {
-      headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+      headers: {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+      },
     });
   } catch (e: any) {
-    console.error(e);
+    console.error('Error in /api/chat:', e);
     return NextResponse.json({ error: e.message }, { status: 500 });
   }
 }
