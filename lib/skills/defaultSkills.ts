@@ -121,20 +121,20 @@ FORMATO OBRIGATÓRIO:
 \`\`\`mermaid
 mindmap
   root((Tema Central))
-    Eixo 1: Conceitos Chave
+    Eixo 1 - Conceitos Chave
       Definicao Principal
       Terminologia Oficial
-    Eixo 2: Processos e Metodos
+    Eixo 2 - Processos e Metodos
       Etapa Inicial
       Monitoramento Continuo
-    Eixo 3: Aplicacoes Praticas
+    Eixo 3 - Aplicacoes Praticas
       Exemplo Real
       Casos de Uso
-    Eixo 4: Pontos Criticos
+    Eixo 4 - Pontos Criticos
       Erros Comuns
       Regras de Ouro
 \`\`\`
-(Importante: No código Mermaid mindmap, NÃO utilize aspas duplas, parênteses ou caracteres especiais complexos dentro dos textos das folhas para garantir a renderização perfeita).
+(REGRA CRÍTICA PARA MERMAID MINDMAP: NUNCA utilize dois-pontos (:), parênteses sem fechar, ou aspas nos textos das ramificações, pois isso quebra a renderização do Mermaid. Use hífens (-) para separar termos, ex: "Eixo 1 - Conceitos Chave").
 
 2. Abaixo do diagrama, inclua uma seção:
 **📌 Eixos e Conexões Principais:**

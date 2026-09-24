@@ -3397,3 +3397,25 @@ body {
   color: #94a3b8;
   font-style: italic;
 }
+
+/* ==========================================================================
+   Mermaid Cleanups & Rogue Error Suppression
+   ========================================================================== */
+body > [id^="dmermaid_"],
+body > [id^="mermaid_"],
+body > svg[id^="dmermaid_"],
+body > div[id^="dmermaid_"] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  position: absolute !important;
+  pointer-events: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  overflow: hidden !important;
+}
+
+.mermaid-error-fallback {
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 0.5rem;
+}
