@@ -23,7 +23,13 @@ export async function POST(req: NextRequest) {
   try {
     await ensureVectorIndex();
     const { messages, materia, webSearch } = await req.json();
+
+    if (!messages || messages.length === 0) {
+      return NextResponse.json({ error: 'Nenhuma mensagem fornecida' }, { status: 400 });
+    }
+
     const currentMessageContent = messages[messages.length - 1].content;
+    const previousMessages = messages.slice(0, -1);
 
     if (!materia) {
       return NextResponse.json({ error: 'Matéria não fornecida' }, { status: 400 });
@@ -31,6 +37,21 @@ export async function POST(req: NextRequest) {
 
     const isGlobal = materia === 'Geral';
     const shouldSearchWeb = Boolean(webSearch) || detectWebSearchIntent(currentMessageContent);
+
+    // If current message is a follow-up/refinement (e.g. "resuma isso", "elabore um texto para o fórum"),
+    // combine with previous user topic so vector search/web search continues retrieving relevant chunks.
+    let searchQuery = currentMessageContent;
+    if (previousMessages.length > 0) {
+      const lastUserMsg = [...previousMessages].reverse().find((m: any) => m.role === 'user');
+      const isFollowUp =
+        /^(isso|esse|essa|ele|ela|o mesmo|resuma|transforme|elabore|reescreva|melhore|adapte|faça|monte|adicione|retire|coloque)\b/i.test(
+          currentMessageContent.trim()
+        ) || currentMessageContent.trim().length < 50;
+
+      if (lastUserMsg && isFollowUp) {
+        searchQuery = `${lastUserMsg.content} - ${currentMessageContent}`;
+      }
+    }
 
     const client = await clientPromise;
     const db = client.db('ragchat');
@@ -56,7 +77,7 @@ export async function POST(req: NextRequest) {
     // 1. Retrieve documents from Vector Store
     let retrievedDocs: any[] = [];
     try {
-      retrievedDocs = await retriever.invoke(currentMessageContent);
+      retrievedDocs = await retriever.invoke(searchQuery);
     } catch (err) {
       console.warn('Retriever fallback:', err);
     }
@@ -91,7 +112,7 @@ export async function POST(req: NextRequest) {
     // 2b. Add Web Search sources if enabled or detected
     if (shouldSearchWeb) {
       try {
-        const webResults = await searchWeb(currentMessageContent, 4);
+        const webResults = await searchWeb(searchQuery, 4);
         webResults.forEach((item) => {
           const key = `web-${item.url}`;
           if (!seen.has(key) && item.snippet.length > 0) {
@@ -114,7 +135,18 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 3. Format context string with [1], [2] labels for LLM grounding
+    // 3. Format conversational memory history (last 8 messages)
+    const recentHistory = previousMessages.slice(-8);
+    const chatHistoryBlock =
+      recentHistory.length > 0
+        ? `Histórico recente da conversa:\n` +
+          recentHistory
+            .map((m: any) => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`)
+            .join('\n\n') +
+          '\n\n---\n'
+        : '';
+
+    // 4. Format context string with [1], [2] labels for LLM grounding
     const contextString =
       sources.length > 0
         ? sources
@@ -127,7 +159,7 @@ export async function POST(req: NextRequest) {
             .join('\n\n---\n\n')
         : 'Nenhum documento ou fonte web relevante encontrada.';
 
-    // 4. Setup Ollama LLM
+    // 5. Setup Ollama LLM
     const llm = new Ollama({
       model: 'llama3',
       baseUrl: 'http://localhost:11434',
@@ -143,18 +175,21 @@ export async function POST(req: NextRequest) {
 
     const prompt = PromptTemplate.fromTemplate(`
 Você é um assistente acadêmico especializado {scopeDescription}.
-Responda à pergunta do usuário baseando-se no contexto das fontes abaixo (documentos do acervo e/ou resultados da Web). Se não houver contexto suficiente ou nenhuma fonte relevante, informe educadamente que ainda não há informações cadastradas sobre o assunto.
-Seja claro, objetivo, educado e use formatação Markdown quando necessário.
+Seu objetivo é ajudar o usuário a estudar, esclarecer dúvidas, estruturar respostas para fóruns acadêmicos, redações e atividades.
+
+Memória e Iteração da Conversa:
+Você tem acesso ao histórico desta conversa. Quando o usuário pedir para refinar, resumir, expandir, alterar o tom ou construir um texto (como para um fórum da faculdade) com base no que já foi discutido, utilize o histórico da conversa e as fontes consultadas para compor a resposta de forma coesa, precisa e bem fundamentada.
 
 Diretriz de citação de fontes (estilo Perplexity):
-Ao mencionar fatos, dados ou informações extraídas das fontes (documentos ou web), cite a referência numérica entre colchetes como [1], [2] ao final da frase correspondente.
+Ao mencionar fatos, dados ou informações extraídas das fontes (documentos ou web), cite a referência numérica entre colchetes como [1], [2] ao final da frase correspondente. Mantenha ou adapte as citações de fontes relevantes mesmo ao reformular o texto.
 
-Diretriz de formatação: Vá direto à explicação. NUNCA inicie sua resposta com títulos como "Resposta:", "**Resposta:**", "Resposta" ou repetindo a pergunta. Comece diretamente respondendo.
+Diretriz de formatação: Vá direto à explicação ou ao texto solicitado. NUNCA inicie sua resposta com títulos como "Resposta:", "**Resposta:**", "Resposta" ou repetindo a pergunta. Comece diretamente respondendo.
 
 Contexto das Fontes:
 {context}
 
-Pergunta:
+{chatHistory}
+Mensagem atual do Usuário:
 {question}
 `);
 
@@ -166,6 +201,7 @@ Pergunta:
 
     const stream = await chain.stream({
       context: contextString,
+      chatHistory: chatHistoryBlock,
       question: currentMessageContent,
       scopeDescription,
     });
