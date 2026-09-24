@@ -8,6 +8,8 @@ import { searchWeb, detectWebSearchIntent } from '@/lib/tools/webSearch';
 import { runIntelligentRAG } from '@/lib/rag/subagent';
 import { CustomAgent } from '@/lib/agents/types';
 import { DEFAULT_AGENTS } from '@/lib/agents/defaultAgents';
+import { CustomSkill } from '@/lib/skills/types';
+import { DEFAULT_SKILLS } from '@/lib/skills/defaultSkills';
 
 export type ChatSource = {
   id: string;
@@ -26,7 +28,7 @@ export type ChatSource = {
 export async function POST(req: NextRequest) {
   try {
     await ensureVectorIndex();
-    const { messages, materia, webSearch, agentId } = await req.json();
+    const { messages, materia, webSearch, agentId, skillId } = await req.json();
 
     if (!messages || messages.length === 0) {
       return NextResponse.json({ error: 'Nenhuma mensagem fornecida' }, { status: 400 });
@@ -49,6 +51,15 @@ export async function POST(req: NextRequest) {
     }
     if (!activeAgent) {
       activeAgent = DEFAULT_AGENTS[0];
+    }
+
+    // Recupera a skill / ferramenta selecionada (Fórum, Flashcards, Simulado, Mapa Mental, Infográfico)
+    let activeSkill: CustomSkill | null = null;
+    if (skillId) {
+      activeSkill = await db.collection<CustomSkill>('skills').findOne({ id: skillId });
+      if (!activeSkill) {
+        activeSkill = DEFAULT_SKILLS.find((s) => s.id === skillId) || null;
+      }
     }
 
     // Identifica se uma matéria específica deve ser consultada pelo agente como ferramenta
@@ -82,6 +93,10 @@ export async function POST(req: NextRequest) {
           // 1. Interação e consulta ao Especialista da Matéria como ferramenta
           if (activeAgent && activeAgent.id !== 'agent_rag_general') {
             sendStatus(`${activeAgent.avatar || '🤖'} [${activeAgent.name}] Analisando solicitação e ativando persona...`);
+          }
+
+          if (activeSkill) {
+            sendStatus(`⚡ [Skill: ${activeSkill.name}] ${activeSkill.icon} Aplicando diretrizes de formatação especializada...`);
           }
 
           if (consultMateria !== 'Geral') {
@@ -217,9 +232,14 @@ Responda EXCLUSIVAMENTE sobre o novo assunto solicitado. NUNCA misture nem respo
 
           const agentPromptTemplate = activeAgent.systemPrompt || DEFAULT_AGENTS[0].systemPrompt;
 
+          const skillInstructionBlock = activeSkill
+            ? `\n=======================================================\nDIRETRIZES DA SKILL ESPECIALIZADA ATIVADA (${activeSkill.name} ${activeSkill.icon}):\n${activeSkill.promptInstruction}\n=======================================================\n`
+            : '';
+
           const prompt = PromptTemplate.fromTemplate(`
 ${agentPromptTemplate}
 
+{skillInstruction}
 {technicalTermHint}
 {topicTransitionHint}
 
@@ -231,6 +251,7 @@ Abaixo estão os trechos e fontes oficiais levantados pelo especialista no acerv
 
 DIRETRIZES DE EXECUÇÃO:
 - Assuma integralmente a sua persona, tom de voz e regras descritas no seu prompt acima.
+- Se uma SKILL especializada estiver ativada acima, siga RIGOROSAMENTE todas as diretrizes de formato, estrutura e regras da skill.
 - Utilize com rigor os dados e orientações fornecidos pelo especialista na "CONSULTA TÉCNICA" para fundamentar a resposta.
 - Ao citar fatos, procedimentos ou dados das fontes, inclua a referência numérica entre colchetes como [1], [2] ao final da frase correspondente.
 - NUNCA invente informações não presentes nas fontes ou no histórico.
@@ -255,6 +276,7 @@ Mensagem atual do Usuário:
             scopeDescription,
             technicalTermHint,
             topicTransitionHint,
+            skillInstruction: skillInstructionBlock,
           });
 
           for await (const chunk of stream) {

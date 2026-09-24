@@ -23,10 +23,14 @@ import {
   Sparkles,
   Bot,
   Settings,
+  Zap,
+  SlidersHorizontal,
 } from 'lucide-react';
 
 import SourcesList, { ChatSource, linkifyCitations } from './components/SourcesList';
 import { CustomAgent } from '@/lib/agents/types';
+import { MermaidChart } from './components/MermaidChart';
+import { CustomSkill } from '@/lib/skills/types';
 
 type Message = {
   id: string;
@@ -41,6 +45,7 @@ type Conversation = {
   materia: string;
   messages: Message[];
   agentId?: string;
+  skillId?: string;
   createdAt: number;
   updatedAt: number;
 };
@@ -97,6 +102,22 @@ function AssistantMessage({
             remarkPlugins={[remarkGfm]}
             urlTransform={(url) => url}
             components={{
+              code: ({ className, children, ...props }: any) => {
+                const match = /language-(\w+)/.exec(className || '');
+                if (match && match[1] === 'mermaid') {
+                  return <MermaidChart chart={String(children).replace(/\n$/, '')} />;
+                }
+                const isInline = !match && !String(children).includes('\n');
+                return isInline ? (
+                  <code className="inline-code" {...props}>
+                    {children}
+                  </code>
+                ) : (
+                  <code className={className} {...props}>
+                    {children}
+                  </code>
+                );
+              },
               a: ({ href, children }) => {
                 if (href && (href.startsWith('#source-') || href.startsWith('citation:'))) {
                   const citationIndex = parseInt(
@@ -169,6 +190,20 @@ export default function ChatApp() {
   const [agentFormMateria, setAgentFormMateria] = useState('Qualquer');
   const [agentFormCanConsult, setAgentFormCanConsult] = useState(true);
 
+  // Custom Skills State (Fórum, Flashcards, Simulado, Mapa Mental, Infográfico)
+  const [skills, setSkills] = useState<CustomSkill[]>([]);
+  const [activeSkillId, setActiveSkillId] = useState<string | null>(null);
+  const [showSkillsModal, setShowSkillsModal] = useState(false);
+  const [isEditingSkill, setIsEditingSkill] = useState(false);
+  const [editingSkillId, setEditingSkillId] = useState<string | null>(null);
+
+  // Skill Form State
+  const [skillFormName, setSkillFormName] = useState('');
+  const [skillFormIcon, setSkillFormIcon] = useState('⚡');
+  const [skillFormDesc, setSkillFormDesc] = useState('');
+  const [skillFormCategory, setSkillFormCategory] = useState<'academico' | 'estudo' | 'visual' | 'produtividade'>('estudo');
+  const [skillFormPrompt, setSkillFormPrompt] = useState('');
+
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
@@ -196,6 +231,19 @@ export default function ChatApp() {
       }
     } catch (e) {
       console.error('Error fetching agents:', e);
+    }
+  };
+
+  // Fetch all skills
+  const fetchSkills = async () => {
+    try {
+      const res = await fetch('/api/skills');
+      const data = await res.json();
+      if (data.skills && data.skills.length > 0) {
+        setSkills(data.skills);
+      }
+    } catch (e) {
+      console.error('Error fetching skills:', e);
     }
   };
 
@@ -235,6 +283,11 @@ export default function ChatApp() {
         if (data.conversations[0].agentId) {
           setActiveAgentId(data.conversations[0].agentId);
         }
+        if (data.conversations[0].skillId) {
+          setActiveSkillId(data.conversations[0].skillId);
+        } else {
+          setActiveSkillId(null);
+        }
       } else {
         // Create an initial conversation if none exists
         const newId = `c_${Date.now()}`;
@@ -243,6 +296,7 @@ export default function ChatApp() {
           title: 'Nova conversa',
           materia: subject,
           agentId: activeAgentId || 'agent_rag_general',
+          skillId: activeSkillId || undefined,
           messages: [],
           createdAt: Date.now(),
           updatedAt: Date.now(),
@@ -272,6 +326,7 @@ export default function ChatApp() {
     fetchSubjects();
     fetchDocuments();
     fetchAgents();
+    fetchSkills();
   }, []);
 
   useEffect(() => {
@@ -295,6 +350,7 @@ export default function ChatApp() {
       title: 'Nova conversa',
       materia: activeSubject,
       agentId: activeAgentId || 'agent_rag_general',
+      skillId: activeSkillId || undefined,
       messages: [],
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -410,6 +466,93 @@ Estrutura recomendada para a resposta do Fórum:
     }
   };
 
+  // Skill Management Handlers
+  const handleOpenCreateSkill = () => {
+    setEditingSkillId(null);
+    setSkillFormName('');
+    setSkillFormIcon('⚡');
+    setSkillFormDesc('');
+    setSkillFormCategory('estudo');
+    setSkillFormPrompt('');
+    setIsEditingSkill(true);
+    setShowSkillsModal(true);
+  };
+
+  const handleOpenEditSkill = (skill: CustomSkill) => {
+    setEditingSkillId(skill.id);
+    setSkillFormName(skill.name);
+    setSkillFormIcon(skill.icon);
+    setSkillFormDesc(skill.description);
+    setSkillFormCategory(skill.category);
+    setSkillFormPrompt(skill.promptInstruction);
+    setIsEditingSkill(true);
+    setShowSkillsModal(true);
+  };
+
+  const handleSaveSkill = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!skillFormName.trim() || !skillFormPrompt.trim()) return;
+
+    try {
+      if (editingSkillId) {
+        const res = await fetch('/api/skills', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            id: editingSkillId,
+            name: skillFormName.trim(),
+            icon: skillFormIcon.trim() || '⚡',
+            description: skillFormDesc.trim(),
+            category: skillFormCategory,
+            promptInstruction: skillFormPrompt.trim(),
+          }),
+        });
+        if (!res.ok) throw new Error('Erro ao salvar alterações da skill');
+      } else {
+        const res = await fetch('/api/skills', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: skillFormName.trim(),
+            icon: skillFormIcon.trim() || '⚡',
+            description: skillFormDesc.trim(),
+            category: skillFormCategory,
+            promptInstruction: skillFormPrompt.trim(),
+          }),
+        });
+        const data = await res.json();
+        if (data.skill) {
+          setActiveSkillId(data.skill.id);
+        }
+      }
+      await fetchSkills();
+      setIsEditingSkill(false);
+      setShowSkillsModal(false);
+    } catch (err: any) {
+      alert(err.message || 'Erro ao salvar skill');
+    }
+  };
+
+  const handleDeleteSkill = async (skillId: string, name: string) => {
+    if (!confirm(`Deseja realmente excluir a skill "${name}"?`)) return;
+    try {
+      const res = await fetch(`/api/skills?id=${encodeURIComponent(skillId)}`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        if (activeSkillId === skillId) {
+          setActiveSkillId(null);
+        }
+        await fetchSkills();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Erro ao excluir skill');
+      }
+    } catch (err) {
+      alert('Erro de conexão ao excluir skill');
+    }
+  };
+
   const handleDeleteConversation = async (e: React.MouseEvent, convId: string) => {
     e.stopPropagation();
     if (!confirm('Deseja excluir esta conversa?')) return;
@@ -468,6 +611,7 @@ Estrutura recomendada para a resposta do Fórum:
           materia: activeSubject,
           webSearch: webSearchEnabled,
           agentId: activeAgentId,
+          skillId: activeSkillId,
         }),
       });
 
@@ -550,6 +694,7 @@ Estrutura recomendada para a resposta do Fórum:
         ...activeConversation,
         title: newTitle,
         agentId: activeAgentId,
+        skillId: activeSkillId || undefined,
         messages: activeConversation.messages
           .concat(userMsg)
           .concat({
@@ -890,7 +1035,11 @@ Estrutura recomendada para a resposta do Fórum:
               <div
                 key={conv.id}
                 className={`conversation-item ${activeConvId === conv.id ? 'active' : ''}`}
-                onClick={() => setActiveConvId(conv.id)}
+                onClick={() => {
+                  setActiveConvId(conv.id);
+                  if (conv.agentId) setActiveAgentId(conv.agentId);
+                  setActiveSkillId(conv.skillId || null);
+                }}
               >
                 <div className="conv-title-wrapper">
                   <MessageSquare size={14} className="conv-icon" />
@@ -1098,6 +1247,67 @@ Estrutura recomendada para a resposta do Fórum:
         </div>
 
         <form className="input-area" onSubmit={handleSend}>
+          {skills.length > 0 && (
+            <div className="skills-toolbar">
+              <div className="skills-list">
+                <span className="skills-toolbar-label">
+                  <Zap size={13} className="text-amber-400" />
+                  <span>Skills:</span>
+                </span>
+                {skills.map((skill) => {
+                  const isSelected = activeSkillId === skill.id;
+                  return (
+                    <button
+                      key={skill.id}
+                      type="button"
+                      onClick={() => setActiveSkillId(isSelected ? null : skill.id)}
+                      className={`skill-chip ${isSelected ? 'active' : ''}`}
+                      title={`${skill.name} — ${skill.description}`}
+                    >
+                      <span className="skill-chip-icon">{skill.icon}</span>
+                      <span className="skill-chip-name">{skill.name}</span>
+                      {isSelected && <span className="skill-chip-check">✓</span>}
+                    </button>
+                  );
+                })}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditingSkill(false);
+                    setShowSkillsModal(true);
+                  }}
+                  className="btn-manage-skills"
+                  title="Gerenciar e Criar Novas Skills"
+                >
+                  <SlidersHorizontal size={13} />
+                  <span>+ Skills</span>
+                </button>
+              </div>
+
+              {skills.find((s) => s.id === activeSkillId) && (
+                <div className="active-skill-banner">
+                  <span className="active-skill-pill">
+                    <span>
+                      Formato Ativo: {skills.find((s) => s.id === activeSkillId)?.icon}{' '}
+                      <strong>{skills.find((s) => s.id === activeSkillId)?.name}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      className="btn-clear-skill"
+                      onClick={() => setActiveSkillId(null)}
+                      title="Desativar skill (usar resposta livre)"
+                    >
+                      ✕
+                    </button>
+                  </span>
+                  <span className="active-skill-desc">
+                    {skills.find((s) => s.id === activeSkillId)?.description}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
           <div className="input-box">
             <button
               type="button"
@@ -1660,6 +1870,243 @@ Estrutura recomendada para a resposta do Fórum:
                   type="button"
                   className="btn-cancel"
                   onClick={() => setShowAgentsModal(false)}
+                >
+                  Fechar
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Custom Skills Management Modal */}
+      {showSkillsModal && (
+        <div className="modal-overlay" onClick={() => setShowSkillsModal(false)}>
+          <div
+            className="modal modal-large modal-skill-manager"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div>
+                <h3>
+                  {isEditingSkill
+                    ? editingSkillId
+                      ? 'Editar Skill / Formato Especializado'
+                      : 'Criar Nova Skill'
+                    : 'Gerenciar Skills & Ferramentas'}
+                </h3>
+                <p className="modal-subtitle">
+                  {isEditingSkill
+                    ? 'Configure as regras e o prompt de formatação especializado (ex: Fórum, Flashcards, Simulado, Mapa Mental, Infográfico).'
+                    : 'Ative ferramentas modulares para transformar o formato das respostas do assistente sob demanda.'}
+                </p>
+              </div>
+              <button
+                className="close-btn"
+                onClick={() => setShowSkillsModal(false)}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {!isEditingSkill ? (
+              // LIST VIEW
+              <div className="agent-cards-grid">
+                {skills.map((sk) => {
+                  const isCurrent = sk.id === activeSkillId;
+                  const catClass =
+                    sk.category === 'academico'
+                      ? 'skill-cat-academico'
+                      : sk.category === 'estudo'
+                      ? 'skill-cat-estudo'
+                      : sk.category === 'visual'
+                      ? 'skill-cat-visual'
+                      : 'skill-cat-produtividade';
+                  return (
+                    <div
+                      key={sk.id}
+                      className={`agent-manage-card ${isCurrent ? 'active' : ''}`}
+                    >
+                      <div className="agent-manage-main">
+                        <span className="agent-manage-avatar">{sk.icon}</span>
+                        <div className="agent-manage-details">
+                          <div className="agent-manage-title">
+                            {sk.name}
+                            <span className={`skill-category-badge ${catClass}`}>
+                              {sk.category}
+                            </span>
+                            {isCurrent && (
+                              <span className="source-meta-tag source-page-tag">
+                                Ativa no momento
+                              </span>
+                            )}
+                            {sk.isBuiltIn && (
+                              <span className="built-in-tag">Nativa</span>
+                            )}
+                          </div>
+                          <div className="agent-manage-desc">
+                            {sk.description || 'Sem descrição.'}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="agent-manage-actions">
+                        <button
+                          type="button"
+                          className="btn-agent-action"
+                          onClick={() => {
+                            setActiveSkillId(isCurrent ? null : sk.id);
+                            setShowSkillsModal(false);
+                          }}
+                          title={isCurrent ? 'Desativar esta skill' : 'Ativar esta skill'}
+                        >
+                          {isCurrent ? 'Desativar' : 'Ativar'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn-agent-action"
+                          onClick={() => handleOpenEditSkill(sk)}
+                          title="Editar instruções desta skill"
+                        >
+                          <Pencil size={12} /> Editar
+                        </button>
+                        {!sk.isBuiltIn && (
+                          <button
+                            type="button"
+                            className="btn-agent-action delete"
+                            onClick={() => handleDeleteSkill(sk.id, sk.name)}
+                            title="Excluir skill"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              // FORM / EDITOR VIEW
+              <form className="agent-form" onSubmit={handleSaveSkill}>
+                <div className="agent-form-row">
+                  <div className="agent-form-group">
+                    <label className="agent-form-label">Emoji / Ícone</label>
+                    <input
+                      type="text"
+                      className="agent-form-input"
+                      style={{ textAlign: 'center', fontSize: '1.25rem' }}
+                      value={skillFormIcon}
+                      onChange={(e) => setSkillFormIcon(e.target.value)}
+                      maxLength={4}
+                      required
+                    />
+                    <div style={{ display: 'flex', gap: '0.35rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
+                      {['💬', '🗂️', '📝', '🧠', '📊', '⚡', '💡', '🎯', '🔍', '📖', '🧪', '📌', '🚀'].map(
+                        (emoji) => (
+                          <button
+                            key={emoji}
+                            type="button"
+                            onClick={() => setSkillFormIcon(emoji)}
+                            style={{
+                              background: skillFormIcon === emoji ? 'rgba(245, 158, 11, 0.3)' : 'rgba(255, 255, 255, 0.05)',
+                              border: '1px solid rgba(255, 255, 255, 0.1)',
+                              borderRadius: '0.3rem',
+                              padding: '0.2rem 0.4rem',
+                              cursor: 'pointer',
+                              fontSize: '0.9rem',
+                            }}
+                          >
+                            {emoji}
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="agent-form-group" style={{ flex: 1 }}>
+                    <label className="agent-form-label">Nome da Skill</label>
+                    <input
+                      type="text"
+                      className="agent-form-input"
+                      placeholder="Ex: Flashcards Avançados, Simulado ENADE, etc."
+                      value={skillFormName}
+                      onChange={(e) => setSkillFormName(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="agent-form-row">
+                  <div className="agent-form-group" style={{ flex: 1 }}>
+                    <label className="agent-form-label">Categoria</label>
+                    <select
+                      className="agent-form-select"
+                      value={skillFormCategory}
+                      onChange={(e: any) => setSkillFormCategory(e.target.value)}
+                    >
+                      <option value="academico">Acadêmico (Fóruns, Debates, Ensaios)</option>
+                      <option value="estudo">Estudo & Revisão (Flashcards, Simulados)</option>
+                      <option value="visual">Visual & Estrutural (Mapas Mentais, Infográficos)</option>
+                      <option value="produtividade">Produtividade (Sínteses, Checklists)</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="agent-form-group">
+                  <label className="agent-form-label">Descrição Resumida</label>
+                  <input
+                    type="text"
+                    className="agent-form-input"
+                    placeholder="Breve explicação do que esta skill faz e quando usá-la..."
+                    value={skillFormDesc}
+                    onChange={(e) => setSkillFormDesc(e.target.value)}
+                  />
+                </div>
+
+                <div className="agent-form-group">
+                  <label className="agent-form-label">
+                    Instruções da Skill (Regras de Formatação & Prompt Especializado)
+                  </label>
+                  <span className="agent-form-hint">
+                    Defina exatamente como o assistente deve estruturar o output quando esta skill estiver ativada (ex: blocos de flashcard, código Mermaid mindmap, tabelas de infográfico, questões com gabarito).
+                  </span>
+                  <textarea
+                    className="agent-form-textarea"
+                    value={skillFormPrompt}
+                    onChange={(e) => setSkillFormPrompt(e.target.value)}
+                    rows={8}
+                    required
+                  />
+                </div>
+
+                <div className="modal-actions">
+                  <button
+                    type="button"
+                    className="btn-cancel"
+                    onClick={() => setIsEditingSkill(false)}
+                  >
+                    Voltar
+                  </button>
+                  <button type="submit" className="btn-submit">
+                    Salvar Skill
+                  </button>
+                </div>
+              </form>
+            )}
+
+            {!isEditingSkill && (
+              <div className="modal-actions space-between">
+                <button
+                  type="button"
+                  className="btn-submit"
+                  onClick={handleOpenCreateSkill}
+                >
+                  <Plus size={16} /> Criar Nova Skill
+                </button>
+                <button
+                  type="button"
+                  className="btn-cancel"
+                  onClick={() => setShowSkillsModal(false)}
                 >
                   Fechar
                 </button>
