@@ -58,8 +58,22 @@ export async function ensureVectorIndex() {
         if (found && found.queryable) break;
       }
     }
+
+    // Cria índices padrão e de busca léxica por keywords
+    try {
+      await collection.createIndex({ materia: 1, source: 1 });
+      await collection.createIndex({ materia: 1, ua: 1 });
+      await collection.createIndex({ materia: 1, aula: 1 });
+      await collection.createIndex({ keywords: 1 });
+      await collection.createIndex(
+        { text: 'text', source: 'text', keywords: 'text' },
+        { name: 'document_text_search', default_language: 'portuguese' }
+      );
+    } catch (idxErr) {
+      // Ignora se o índice de texto já existir com outro nome ou configuração
+    }
   } catch (error) {
-    console.error('Error ensuring vector index:', error);
+    console.error('Error ensuring vector and keyword indexes:', error);
   }
 }
 

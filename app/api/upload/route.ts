@@ -7,6 +7,7 @@ import pdfParse from 'pdf-parse';
 import { GridFSBucket } from 'mongodb';
 import { Readable } from 'stream';
 import { recordBatchFileStatus } from '@/lib/queue/redisQueue';
+import { extractDocumentMetadata } from '@/lib/rag/metadata';
 
 export type ProcessFileResult = {
   filename: string;
@@ -131,12 +132,24 @@ async function processSingleDocument(
     chunkOverlap: 200,
   });
 
+  const fullText = pages.map((p) => p.text).slice(0, 3).join('\n');
+  const docMeta = extractDocumentMetadata(file.name, fullText);
+
   const pageTexts = pages.map((p) => p.text);
-  const pageMetadatas = pages.map((p) => ({
-    materia,
-    source: file.name,
-    page: p.pageNumber,
-  }));
+  const pageMetadatas = pages.map((p) => {
+    const pageMeta = extractDocumentMetadata(file.name, p.text);
+    return {
+      materia,
+      source: file.name,
+      page: p.pageNumber,
+      ua: pageMeta.ua ?? docMeta.ua,
+      uaCode: pageMeta.uaCode ?? docMeta.uaCode,
+      aula: pageMeta.aula ?? docMeta.aula,
+      unidade: pageMeta.unidade ?? docMeta.unidade,
+      keywords: Array.from(new Set([...docMeta.keywords, ...pageMeta.keywords])),
+      title: docMeta.documentTitle,
+    };
+  });
 
   const docs = await splitter.createDocuments(pageTexts, pageMetadatas);
 
@@ -184,6 +197,27 @@ async function processSingleDocument(
     textKey: 'text',
     embeddingKey: 'embedding',
   });
+
+  // Garante que campos top-level de metadados e keywords estejam sincronizados para queries rápidas e filtros
+  try {
+    await collection.updateMany(
+      { source: file.name, materia },
+      [
+        {
+          $set: {
+            ua: '$metadata.ua',
+            uaCode: '$metadata.uaCode',
+            aula: '$metadata.aula',
+            unidade: '$metadata.unidade',
+            keywords: '$metadata.keywords',
+            title: '$metadata.title',
+          },
+        },
+      ]
+    );
+  } catch (err) {
+    console.warn('Erro ao sincronizar campos top-level de metadados:', err);
+  }
 
   if (batchId) {
     await recordBatchFileStatus(batchId, file.name, {
