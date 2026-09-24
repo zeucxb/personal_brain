@@ -62,21 +62,23 @@ function AssistantMessage({
 
   return (
     <>
-      {sources && sources.length > 0 && (
-        <SourcesList
-          sources={sources}
-          selectedSource={selectedSource}
-          onSelectSource={setSelectedSource}
-        />
-      )}
+      <SourcesList
+        sources={sources}
+        selectedSource={selectedSource}
+        onSelectSource={setSelectedSource}
+      />
       {content ? (
         <div className="markdown-content">
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
+            urlTransform={(url) => url}
             components={{
               a: ({ href, children }) => {
-                if (href && href.startsWith('citation:')) {
-                  const citationIndex = parseInt(href.replace('citation:', ''), 10);
+                if (href && (href.startsWith('#source-') || href.startsWith('citation:'))) {
+                  const citationIndex = parseInt(
+                    href.replace(/^#source-|^citation:/, ''),
+                    10
+                  );
                   const matchedSource = sources?.find((s) => s.index === citationIndex);
                   return (
                     <button

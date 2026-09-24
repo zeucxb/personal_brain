@@ -1051,6 +1051,12 @@ body {
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
 }
 
+.source-card.active {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: var(--accent);
+  box-shadow: 0 0 14px rgba(59, 130, 246, 0.35);
+}
+
 .source-card-header {
   display: flex;
   align-items: center;

@@ -33,8 +33,8 @@ export function linkifyCitations(text: string): string {
       .map((n: string) => `[${n.trim()}]`)
       .join(' ');
   });
-  // Replace [1] with [1](citation:1), ignoring existing markdown links [name](url)
-  return cleaned.replace(/\[(\d+)\](?!\()/g, (_, num) => `[${num}](citation:${num})`);
+  // Replace [1] with [1](#source-1), ignoring existing markdown links [name](url)
+  return cleaned.replace(/\[(\d+)\](?!\()/g, (_, num) => `[${num}](#source-${num})`);
 }
 
 export default function SourcesList({
@@ -63,13 +63,14 @@ export default function SourcesList({
           <div className="sources-grid">
             {sources.map((src) => {
               const isDoc = src.type === 'document';
-          return (
-            <div
-              key={src.id || src.index}
-              className="source-card"
-              onClick={() => setSelectedSource(src)}
-              title={`Clique para ver o trecho extraído deste ${isDoc ? 'documento' : 'link'}`}
-            >
+              const isSelected = selectedSource?.index === src.index;
+              return (
+                <div
+                  key={src.id || src.index}
+                  className={`source-card ${isSelected ? 'active' : ''}`}
+                  onClick={() => setSelectedSource(src)}
+                  title={`Clique para ver o trecho extraído deste ${isDoc ? 'documento' : 'link'}`}
+                >
               <div className="source-card-header">
                 <span className="source-index">[{src.index}]</span>
                 {isDoc ? (
