@@ -1430,7 +1430,14 @@ Estrutura recomendada para a resposta do Fórum:
         <form className="input-area" onSubmit={handleSend}>
           {skills.length > 0 && (
             <div className="skills-toolbar">
-              <div className="skills-list">
+              <div
+                className="skills-list"
+                onWheel={(e) => {
+                  if (e.deltaY !== 0) {
+                    e.currentTarget.scrollLeft += e.deltaY;
+                  }
+                }}
+              >
                 <span className="skills-toolbar-label">
                   <Zap size={13} className="text-amber-400" />
                   <span>Skills:</span>
