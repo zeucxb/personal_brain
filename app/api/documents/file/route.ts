@@ -3,6 +3,8 @@ import clientPromise from '@/lib/mongodb';
 import { GridFSBucket } from 'mongodb';
 import { Readable } from 'stream';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);

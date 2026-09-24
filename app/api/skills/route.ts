@@ -12,13 +12,17 @@ export async function GET(req: NextRequest) {
     const count = await collection.countDocuments();
     if (count === 0) {
       // Seed default skills
-      await collection.insertMany(DEFAULT_SKILLS);
+      await collection.insertMany(DEFAULT_SKILLS.map(s => {
+        const { _id, ...rest } = s as any;
+        return { ...rest };
+      }));
     } else {
       // Garante que skills novas e atualizações de embutidas sejam refletidas
       for (const def of DEFAULT_SKILLS) {
         const exists = await collection.findOne({ id: def.id });
         if (!exists) {
-          await collection.insertOne(def);
+          const { _id, ...skillData } = def as any;
+          await collection.insertOne({ ...skillData });
         } else if (def.isBuiltIn) {
           await collection.updateOne(
             { id: def.id },
