@@ -24,6 +24,7 @@ export async function DELETE(req: Request) {
     const client = await clientPromise;
     const db = client.db('ragchat');
     const result = await db.collection('documents').deleteMany({ materia });
+    await db.collection('conversations').deleteMany({ materia });
     return NextResponse.json({ success: true, deletedCount: result.deletedCount });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });

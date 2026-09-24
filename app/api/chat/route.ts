@@ -8,11 +8,12 @@ import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
 
 function formatDocumentsAsString(documents: any[]) {
-  if (!documents || documents.length === 0) return 'Nenhum documento encontrado para esta matéria.';
+  if (!documents || documents.length === 0) return 'Nenhum documento encontrado.';
   return documents
     .map((doc) => {
-      const src = doc.metadata?.source ? `[Documento: ${doc.metadata.source}]\n` : '';
-      return `${src}${doc.pageContent}`;
+      const src = doc.metadata?.source || doc.source || 'Desconhecido';
+      const mat = doc.metadata?.materia || doc.materia ? ` | Matéria: ${doc.metadata?.materia || doc.materia}` : '';
+      return `[Documento: ${src}${mat}]\n${doc.pageContent}`;
     })
     .join('\n\n---\n\n');
 }
@@ -26,6 +27,8 @@ export async function POST(req: NextRequest) {
     if (!materia) {
       return NextResponse.json({ error: 'Matéria não fornecida' }, { status: 400 });
     }
+
+    const isGlobal = materia === 'Geral';
 
     const client = await clientPromise;
     const db = client.db('ragchat');
@@ -44,7 +47,7 @@ export async function POST(req: NextRequest) {
     });
 
     const retriever = vectorStore.asRetriever({
-      filter: { preFilter: { materia: { $eq: materia } } },
+      filter: isGlobal ? undefined : { preFilter: { materia: { $eq: materia } } },
       k: 5,
     });
 
@@ -53,10 +56,14 @@ export async function POST(req: NextRequest) {
       baseUrl: 'http://localhost:11434',
     });
 
+    const scopeDescription = isGlobal
+      ? 'em todas as matérias cadastradas no acervo global'
+      : `na matéria "${materia}"`;
+
     const prompt = PromptTemplate.fromTemplate(`
-Você é um assistente acadêmico especializado na matéria "{materia}".
-Responda à pergunta do usuário baseando-se no contexto extraído dos documentos abaixo. Se não houver contexto suficiente ou nenhum documento relevante, informe educadamente que ainda não há documentos sobre o assunto cadastrados para essa matéria.
-Seja claro, educado e use formatação Markdown quando necessário.
+Você é um assistente acadêmico especializado {scopeDescription}.
+Responda à pergunta do usuário baseando-se no contexto extraído dos documentos abaixo. Se não houver contexto suficiente ou nenhum documento relevante, informe educadamente que ainda não há documentos sobre o assunto cadastrados.
+Seja claro, educado e use formatação Markdown quando necessário. Sempre que usar informações dos documentos, cite o documento e a matéria de onde a informação foi extraída.
 
 Contexto dos Documentos:
 {context}
@@ -79,6 +86,7 @@ Resposta:
         },
         question: (input: { question: string; materia: string }) => input.question,
         materia: (input: { question: string; materia: string }) => input.materia,
+        scopeDescription: () => scopeDescription,
       },
       prompt,
       llm,

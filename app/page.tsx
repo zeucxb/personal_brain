@@ -3,12 +3,31 @@
 import React, { useState, useEffect, useRef } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { FileText, UploadCloud, Trash2, Plus, X, BookOpen, Layers } from 'lucide-react';
+import {
+  FileText,
+  UploadCloud,
+  Trash2,
+  Plus,
+  X,
+  BookOpen,
+  Layers,
+  MessageSquare,
+  Globe,
+} from 'lucide-react';
 
 type Message = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+};
+
+type Conversation = {
+  id: string;
+  title: string;
+  materia: string;
+  messages: Message[];
+  createdAt: number;
+  updatedAt: number;
 };
 
 type DocItem = {
@@ -21,7 +40,9 @@ export default function ChatApp() {
   const [subjects, setSubjects] = useState<string[]>(['Geral']);
   const [activeSubject, setActiveSubject] = useState<string>('Geral');
   const [documents, setDocuments] = useState<DocItem[]>([]);
-  const [messages, setMessages] = useState<Record<string, Message[]>>({});
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConvId, setActiveConvId] = useState<string | null>(null);
+
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -34,6 +55,7 @@ export default function ChatApp() {
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Fetch all subjects and documents on mount
   const fetchSubjects = async () => {
     try {
       const res = await fetch('/api/subjects');
@@ -58,41 +80,134 @@ export default function ChatApp() {
     }
   };
 
+  // Fetch conversations for the active subject
+  const loadConversations = async (subject: string) => {
+    try {
+      const res = await fetch(`/api/conversations?materia=${encodeURIComponent(subject)}`);
+      const data = await res.json();
+      if (data.conversations && data.conversations.length > 0) {
+        setConversations(data.conversations);
+        setActiveConvId(data.conversations[0].id);
+      } else {
+        // Create an initial conversation if none exists
+        const newId = `c_${Date.now()}`;
+        const newConv: Conversation = {
+          id: newId,
+          title: 'Nova conversa',
+          materia: subject,
+          messages: [],
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        setConversations([newConv]);
+        setActiveConvId(newId);
+        saveConversationToDb(newConv);
+      }
+    } catch (e) {
+      console.error('Error loading conversations:', e);
+    }
+  };
+
+  const saveConversationToDb = async (conv: Conversation) => {
+    try {
+      await fetch('/api/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(conv),
+      });
+    } catch (e) {
+      console.error('Error saving conversation to DB:', e);
+    }
+  };
+
   useEffect(() => {
     fetchSubjects();
     fetchDocuments();
   }, []);
 
   useEffect(() => {
+    loadConversations(activeSubject);
+  }, [activeSubject]);
+
+  useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, activeSubject]);
+  }, [conversations, activeConvId]);
+
+  const activeConversation =
+    conversations.find((c) => c.id === activeConvId) || conversations[0] || null;
+
+  const currentMessages = activeConversation ? activeConversation.messages : [];
+
+  const handleCreateNewConversation = () => {
+    const newId = `c_${Date.now()}`;
+    const newConv: Conversation = {
+      id: newId,
+      title: 'Nova conversa',
+      materia: activeSubject,
+      messages: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+    setConversations((prev) => [newConv, ...prev]);
+    setActiveConvId(newId);
+    saveConversationToDb(newConv);
+  };
+
+  const handleDeleteConversation = async (e: React.MouseEvent, convId: string) => {
+    e.stopPropagation();
+    if (!confirm('Deseja excluir esta conversa?')) return;
+
+    try {
+      await fetch(`/api/conversations?id=${convId}`, { method: 'DELETE' });
+      const remaining = conversations.filter((c) => c.id !== convId);
+      setConversations(remaining);
+
+      if (activeConvId === convId) {
+        if (remaining.length > 0) {
+          setActiveConvId(remaining[0].id);
+        } else {
+          handleCreateNewConversation();
+        }
+      }
+    } catch (err) {
+      console.error('Error deleting conversation:', err);
+    }
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading) return;
+    if (!input.trim() || isLoading || !activeConversation) return;
 
-    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: input };
-    const subjectMessages = messages[activeSubject] || [];
+    const userMsgText = input.trim();
+    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: userMsgText };
+    const botMsgId = (Date.now() + 1).toString();
+    const botMsgPlaceholder: Message = { id: botMsgId, role: 'assistant', content: '' };
 
-    setMessages({
-      ...messages,
-      [activeSubject]: [...subjectMessages, userMsg],
-    });
+    const isFirstMessage = activeConversation.messages.length === 0;
+    const newTitle =
+      isFirstMessage && activeConversation.title === 'Nova conversa'
+        ? userMsgText.slice(0, 32) + (userMsgText.length > 32 ? '...' : '')
+        : activeConversation.title;
+
+    const updatedMessages = [...activeConversation.messages, userMsg, botMsgPlaceholder];
+
+    setConversations((prev) =>
+      prev.map((c) =>
+        c.id === activeConversation.id
+          ? { ...c, title: newTitle, messages: updatedMessages, updatedAt: Date.now() }
+          : c
+      )
+    );
+
     setInput('');
     setIsLoading(true);
-
-    const botMsgId = (Date.now() + 1).toString();
-    setMessages((prev) => ({
-      ...prev,
-      [activeSubject]: [...(prev[activeSubject] || []), { id: botMsgId, role: 'assistant', content: '' }],
-    }));
 
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [...subjectMessages, userMsg],
+          messages: [...activeConversation.messages, userMsg],
           materia: activeSubject,
         }),
       });
@@ -110,17 +225,30 @@ export default function ChatApp() {
           const chunkValue = decoder.decode(value, { stream: !done });
           accumulatedText += chunkValue;
 
-          setMessages((prev) => {
-            const currentList = prev[activeSubject] || [];
-            return {
-              ...prev,
-              [activeSubject]: currentList.map((m) =>
-                m.id === botMsgId ? { ...m, content: accumulatedText } : m
-              ),
-            };
-          });
+          setConversations((prev) =>
+            prev.map((c) => {
+              if (c.id !== activeConversation.id) return c;
+              return {
+                ...c,
+                messages: c.messages.map((m) =>
+                  m.id === botMsgId ? { ...m, content: accumulatedText } : m
+                ),
+              };
+            })
+          );
         }
       }
+
+      // Persist finished conversation to DB
+      const finalConv: Conversation = {
+        ...activeConversation,
+        title: newTitle,
+        messages: activeConversation.messages
+          .concat(userMsg)
+          .concat({ id: botMsgId, role: 'assistant', content: accumulatedText }),
+        updatedAt: Date.now(),
+      };
+      saveConversationToDb(finalConv);
     } catch (error) {
       console.error('Error in chat:', error);
     } finally {
@@ -191,11 +319,7 @@ export default function ChatApp() {
 
   const handleDeleteSubject = async (e: React.MouseEvent, sub: string) => {
     e.stopPropagation();
-    if (
-      !confirm(
-        `Deseja excluir a matéria "${sub}" e todos os seus documentos indexados?`
-      )
-    ) {
+    if (!confirm(`Deseja excluir a matéria "${sub}", seus documentos e suas conversas?`)) {
       return;
     }
 
@@ -215,8 +339,10 @@ export default function ChatApp() {
     }
   };
 
-  const currentMessages = messages[activeSubject] || [];
-  const currentSubjectDocs = documents.filter((d) => d.materia === activeSubject);
+  const currentSubjectDocs =
+    activeSubject === 'Geral'
+      ? documents
+      : documents.filter((d) => d.materia === activeSubject);
 
   return (
     <div className="app-container">
@@ -227,10 +353,32 @@ export default function ChatApp() {
           <span>RAG Chat</span>
         </h1>
 
-        <div className="sidebar-section-title">Matérias</div>
+        {/* Section 1: Matérias */}
+        <div className="sidebar-section-header">
+          <span className="sidebar-section-title">Matérias</span>
+          <button
+            className="add-sub-btn"
+            title="Criar nova matéria"
+            onClick={() => {
+              const name = prompt('Nome da nova matéria:');
+              if (name && !subjects.includes(name.trim())) {
+                const cleanName = name.trim();
+                setSubjects([...subjects, cleanName]);
+                setActiveSubject(cleanName);
+              }
+            }}
+          >
+            <Plus size={14} />
+          </button>
+        </div>
+
         <div className="subject-list">
           {subjects.map((sub) => {
-            const count = documents.filter((d) => d.materia === sub).length;
+            const count =
+              sub === 'Geral'
+                ? documents.length
+                : documents.filter((d) => d.materia === sub).length;
+            const isGeral = sub === 'Geral';
             return (
               <div
                 key={sub}
@@ -238,16 +386,25 @@ export default function ChatApp() {
                 onClick={() => setActiveSubject(sub)}
               >
                 <div className="subject-name-wrapper">
+                  {isGeral ? (
+                    <Globe size={15} className="subject-icon" />
+                  ) : (
+                    <BookOpen size={15} className="subject-icon" />
+                  )}
                   <span className="subject-name">{sub}</span>
-                  {count > 0 && <span className="doc-badge">{count} PDF{count > 1 ? 's' : ''}</span>}
+                  {count > 0 && (
+                    <span className="doc-badge" title={`${count} documento(s)`}>
+                      {count} {isGeral ? 'total' : 'PDF' + (count > 1 ? 's' : '')}
+                    </span>
+                  )}
                 </div>
-                {sub !== 'Geral' && (
+                {!isGeral && (
                   <button
                     className="subject-delete-btn"
                     title={`Excluir matéria ${sub}`}
                     onClick={(e) => handleDeleteSubject(e, sub)}
                   >
-                    <Trash2 size={14} />
+                    <Trash2 size={13} />
                   </button>
                 )}
               </div>
@@ -255,31 +412,68 @@ export default function ChatApp() {
           })}
         </div>
 
-        <button
-          className="new-subject-btn"
-          onClick={() => {
-            const name = prompt('Nome da nova matéria:');
-            if (name && !subjects.includes(name.trim())) {
-              const cleanName = name.trim();
-              setSubjects([...subjects, cleanName]);
-              setActiveSubject(cleanName);
-            }
-          }}
-        >
-          <Plus size={16} />
-          Nova Matéria
-        </button>
+        {/* Section 2: Conversas da Matéria Ativa */}
+        <div className="conversations-section">
+          <div className="sidebar-section-header">
+            <span className="sidebar-section-title">
+              Conversas em {activeSubject}
+            </span>
+            <button
+              className="new-chat-btn"
+              onClick={handleCreateNewConversation}
+              title="Iniciar nova conversa nesta matéria"
+            >
+              <Plus size={14} />
+              <span>Nova</span>
+            </button>
+          </div>
+
+          <div className="conversation-list">
+            {conversations.map((conv) => (
+              <div
+                key={conv.id}
+                className={`conversation-item ${activeConvId === conv.id ? 'active' : ''}`}
+                onClick={() => setActiveConvId(conv.id)}
+              >
+                <div className="conv-title-wrapper">
+                  <MessageSquare size={14} className="conv-icon" />
+                  <span className="conv-title" title={conv.title}>
+                    {conv.title}
+                  </span>
+                </div>
+                {conversations.length > 1 && (
+                  <button
+                    className="conv-delete-btn"
+                    title="Excluir conversa"
+                    onClick={(e) => handleDeleteConversation(e, conv.id)}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
       </aside>
 
       {/* Main Chat Area */}
       <main className="chat-area">
         <header className="chat-header">
           <div>
-            <h2>{activeSubject}</h2>
-            <p className="subject-meta">
-              {currentSubjectDocs.length === 0
-                ? 'Nenhum documento anexado'
-                : `${currentSubjectDocs.length} documento(s) indexado(s)`}
+            <div className="chat-title-row">
+              <h2>{activeSubject}</h2>
+              {activeSubject === 'Geral' ? (
+                <span className="global-scope-pill" title="A matéria Geral tem acesso a todos os PDFs">
+                  <Globe size={13} /> Acesso a todo o acervo ({documents.length} PDFs)
+                </span>
+              ) : (
+                <span className="subject-scope-pill">
+                  {currentSubjectDocs.length} PDF(s) indexado(s)
+                </span>
+              )}
+            </div>
+            <p className="active-conv-name">
+              Chat: <strong>{activeConversation ? activeConversation.title : 'Nova conversa'}</strong>
             </p>
           </div>
 
@@ -287,16 +481,42 @@ export default function ChatApp() {
             <button
               className="secondary-btn"
               onClick={() => setShowDocsModal(true)}
-              title="Gerenciar documentos da matéria"
+              title="Gerenciar documentos indexados"
             >
               <FileText size={16} />
-              <span>Documentos ({currentSubjectDocs.length})</span>
+              <span>
+                Documentos ({currentSubjectDocs.length})
+              </span>
             </button>
 
-            <button className="upload-btn" onClick={() => setShowUploadModal(true)}>
-              <UploadCloud size={16} />
-              <span>Upload PDF</span>
-            </button>
+            {activeSubject !== 'Geral' ? (
+              <button className="upload-btn" onClick={() => setShowUploadModal(true)}>
+                <UploadCloud size={16} />
+                <span>Upload PDF</span>
+              </button>
+            ) : (
+              <button
+                className="upload-btn"
+                title="Para fazer upload, selecione uma matéria específica ou crie uma"
+                onClick={() => {
+                  const targetSubject = prompt(
+                    'Para qual matéria deseja enviar o PDF? Digite o nome da matéria:',
+                    'Direito Empresarial'
+                  );
+                  if (targetSubject && targetSubject.trim()) {
+                    const clean = targetSubject.trim();
+                    if (!subjects.includes(clean)) {
+                      setSubjects([...subjects, clean]);
+                    }
+                    setActiveSubject(clean);
+                    setShowUploadModal(true);
+                  }
+                }}
+              >
+                <UploadCloud size={16} />
+                <span>Upload PDF</span>
+              </button>
+            )}
           </div>
         </header>
 
@@ -306,12 +526,21 @@ export default function ChatApp() {
               <div className="placeholder-icon">
                 <Layers size={36} />
               </div>
-              <h3>Conversar sobre {activeSubject}</h3>
+              <h3>
+                {activeSubject === 'Geral'
+                  ? 'Chat Global (Todas as Matérias)'
+                  : `Conversar sobre ${activeSubject}`}
+              </h3>
               <p>
-                {currentSubjectDocs.length === 0 ? (
+                {activeSubject === 'Geral' ? (
+                  <>
+                    A matéria <strong>Geral</strong> busca contexto em <strong>todos os PDFs cadastrados no sistema</strong> ({documents.length} documentos no total).<br />
+                    Pergunte qualquer coisa sobre qualquer matéria que o Llama 3 encontrará as respostas!
+                  </>
+                ) : currentSubjectDocs.length === 0 ? (
                   <>
                     Esta matéria ainda não possui documentos indexados.<br />
-                    Clique em <strong>Upload PDF</strong> para adicionar o material de estudo.
+                    Clique em <strong>Upload PDF</strong> acima para anexar suas apostilas.
                   </>
                 ) : (
                   <>
@@ -351,7 +580,11 @@ export default function ChatApp() {
           <div className="input-box">
             <input
               type="text"
-              placeholder={`Pergunte algo sobre ${activeSubject}...`}
+              placeholder={
+                activeSubject === 'Geral'
+                  ? 'Pergunte algo no acervo global de todas as matérias...'
+                  : `Pergunte algo sobre ${activeSubject}...`
+              }
               value={input}
               onChange={(e) => setInput(e.target.value)}
               disabled={isLoading}
@@ -421,7 +654,11 @@ export default function ChatApp() {
           <div className="modal modal-large" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
               <div>
-                <h3>Documentos de {activeSubject}</h3>
+                <h3>
+                  {activeSubject === 'Geral'
+                    ? 'Todos os Documentos do Acervo'
+                    : `Documentos de ${activeSubject}`}
+                </h3>
                 <p className="modal-subtitle">
                   {currentSubjectDocs.length} arquivo(s) salvos no MongoDB com busca vetorial
                 </p>
@@ -448,16 +685,19 @@ export default function ChatApp() {
                 </div>
               ) : (
                 currentSubjectDocs.map((doc) => (
-                  <div key={doc.filename} className="doc-item">
+                  <div key={`${doc.materia}-${doc.filename}`} className="doc-item">
                     <div className="doc-info">
                       <FileText size={20} className="doc-file-icon" />
                       <div className="doc-details">
                         <span className="doc-name" title={doc.filename}>
                           {doc.filename}
                         </span>
-                        <span className="doc-chunks">
-                          {doc.chunksCount} chunks indexados
-                        </span>
+                        <div className="doc-meta-row">
+                          <span className="doc-materia-tag">{doc.materia}</span>
+                          <span className="doc-chunks">
+                            {doc.chunksCount} chunks indexados
+                          </span>
+                        </div>
                       </div>
                     </div>
 
@@ -482,15 +722,19 @@ export default function ChatApp() {
             </div>
 
             <div className="modal-actions space-between">
-              <button
-                className="upload-btn"
-                onClick={() => {
-                  setShowDocsModal(false);
-                  setShowUploadModal(true);
-                }}
-              >
-                <Plus size={16} /> Adicionar Novo PDF
-              </button>
+              {activeSubject !== 'Geral' ? (
+                <button
+                  className="upload-btn"
+                  onClick={() => {
+                    setShowDocsModal(false);
+                    setShowUploadModal(true);
+                  }}
+                >
+                  <Plus size={16} /> Adicionar Novo PDF
+                </button>
+              ) : (
+                <div></div>
+              )}
               <button className="btn-cancel" onClick={() => setShowDocsModal(false)}>
                 Fechar
               </button>
