@@ -36,6 +36,14 @@ type DocItem = {
   chunksCount: number;
 };
 
+function cleanAiResponse(text: string): string {
+  if (!text) return '';
+  let res = text.trimStart();
+  res = res.replace(/^(\*{1,3}|#{1,4}\s*)?Pergunta:[^\n]*(\*{1,3})?\s*(\n+)?/i, '');
+  res = res.replace(/^(\*{1,3}|#{1,4}\s*)?Resposta:?(\*{1,3})?:?\s*(\n+)?/i, '');
+  return res.trimStart();
+}
+
 export default function ChatApp() {
   const [subjects, setSubjects] = useState<string[]>(['Geral']);
   const [activeSubject, setActiveSubject] = useState<string>('Geral');
@@ -225,13 +233,14 @@ export default function ChatApp() {
           const chunkValue = decoder.decode(value, { stream: !done });
           accumulatedText += chunkValue;
 
+          const cleanedCurrent = cleanAiResponse(accumulatedText);
           setConversations((prev) =>
             prev.map((c) => {
               if (c.id !== activeConversation.id) return c;
               return {
                 ...c,
                 messages: c.messages.map((m) =>
-                  m.id === botMsgId ? { ...m, content: accumulatedText } : m
+                  m.id === botMsgId ? { ...m, content: cleanedCurrent } : m
                 ),
               };
             })
@@ -240,12 +249,13 @@ export default function ChatApp() {
       }
 
       // Persist finished conversation to DB
+      const finalCleanedText = cleanAiResponse(accumulatedText);
       const finalConv: Conversation = {
         ...activeConversation,
         title: newTitle,
         messages: activeConversation.messages
           .concat(userMsg)
-          .concat({ id: botMsgId, role: 'assistant', content: accumulatedText }),
+          .concat({ id: botMsgId, role: 'assistant', content: finalCleanedText }),
         updatedAt: Date.now(),
       };
       saveConversationToDb(finalConv);
@@ -557,7 +567,7 @@ export default function ChatApp() {
                   msg.content ? (
                     <div className="markdown-content">
                       <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                        {msg.content}
+                        {cleanAiResponse(msg.content)}
                       </ReactMarkdown>
                     </div>
                   ) : (
