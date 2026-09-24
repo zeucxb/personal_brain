@@ -89,6 +89,15 @@ export async function GET(req: NextRequest) {
 
     const fileDoc = files[0];
     const fileSize = fileDoc.length;
+    const lowerName = filename.toLowerCase();
+    const contentType =
+      fileDoc.metadata?.contentType ||
+      (lowerName.endsWith('.md') || lowerName.endsWith('.markdown')
+        ? 'text/markdown; charset=utf-8'
+        : lowerName.endsWith('.txt')
+        ? 'text/plain; charset=utf-8'
+        : 'application/pdf');
+
     const rangeHeader = req.headers.get('range');
 
     if (rangeHeader) {
@@ -108,7 +117,7 @@ export async function GET(req: NextRequest) {
           return new Response(webStream, {
             status: 206,
             headers: {
-              'Content-Type': 'application/pdf',
+              'Content-Type': contentType,
               'Content-Disposition': `inline; filename="${encodeURIComponent(filename)}"`,
               'Content-Range': `bytes ${start}-${end}/${fileSize}`,
               'Content-Length': chunkLength.toString(),
@@ -125,7 +134,7 @@ export async function GET(req: NextRequest) {
     return new Response(webStream, {
       status: 200,
       headers: {
-        'Content-Type': 'application/pdf',
+        'Content-Type': contentType,
         'Content-Disposition': `inline; filename="${encodeURIComponent(filename)}"`,
         'Content-Length': fileSize.toString(),
         'Accept-Ranges': 'bytes',

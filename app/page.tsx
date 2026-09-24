@@ -430,10 +430,10 @@ export default function ChatApp() {
   const handleFilesSelected = (fileList: FileList | File[] | null) => {
     if (!fileList) return;
     const validFiles = Array.from(fileList).filter((f) =>
-      f.name.toLowerCase().endsWith('.pdf')
+      /\.(pdf|md|markdown|txt)$/i.test(f.name)
     );
     if (validFiles.length === 0) {
-      alert('Por favor, selecione arquivos em formato PDF (.pdf).');
+      alert('Por favor, selecione arquivos em formato PDF, Markdown ou Texto (.pdf, .md, .txt).');
       return;
     }
 
@@ -770,12 +770,12 @@ export default function ChatApp() {
             <div className="chat-title-row">
               <h2>{activeSubject}</h2>
               {activeSubject === 'Geral' ? (
-                <span className="global-scope-pill" title="O tópico Geral tem acesso a todos os PDFs">
-                  <Globe size={13} /> Acesso a todo o acervo ({documents.length} PDFs)
+                <span className="global-scope-pill" title="O tópico Geral tem acesso a todos os documentos">
+                  <Globe size={13} /> Acesso a todo o acervo ({documents.length} docs)
                 </span>
               ) : (
                 <span className="subject-scope-pill">
-                  {currentSubjectDocs.length} PDF(s) indexado(s)
+                  {currentSubjectDocs.length} documento(s) indexado(s)
                 </span>
               )}
             </div>
@@ -799,7 +799,7 @@ export default function ChatApp() {
             {activeSubject !== 'Geral' ? (
               <button className="upload-btn" onClick={() => setShowUploadModal(true)}>
                 <UploadCloud size={16} />
-                <span>Upload PDF</span>
+                <span>Upload Arquivos</span>
               </button>
             ) : (
               <button
@@ -807,7 +807,7 @@ export default function ChatApp() {
                 title="Para fazer upload, selecione um tópico específico ou crie um"
                 onClick={() => {
                   const targetSubject = prompt(
-                    'Para qual tópico deseja enviar o PDF? Digite o nome do tópico:',
+                    'Para qual tópico deseja enviar os arquivos? Digite o nome do tópico:',
                     'Direito Empresarial'
                   );
                   if (targetSubject && targetSubject.trim()) {
@@ -821,7 +821,7 @@ export default function ChatApp() {
                 }}
               >
                 <UploadCloud size={16} />
-                <span>Upload PDF</span>
+                <span>Upload Arquivos</span>
               </button>
             )}
           </div>
@@ -841,13 +841,13 @@ export default function ChatApp() {
               <p>
                 {activeSubject === 'Geral' ? (
                   <>
-                    O tópico <strong>Geral</strong> busca contexto em <strong>todos os PDFs cadastrados no sistema</strong> ({documents.length} documentos no total).<br />
+                    O tópico <strong>Geral</strong> busca contexto em <strong>todos os documentos cadastrados no sistema</strong> ({documents.length} documentos no total).<br />
                     Pergunte qualquer coisa sobre qualquer tópico que o Llama 3 encontrará as respostas!
                   </>
                 ) : currentSubjectDocs.length === 0 ? (
                   <>
                     Este tópico ainda não possui documentos indexados.<br />
-                    Você pode clicar em <strong>Upload PDF</strong> para anexar apostilas ou ativar o botão <strong>🌐 Web</strong> abaixo para pesquisar na internet!
+                    Você pode clicar em <strong>Upload Arquivos</strong> para anexar PDFs, arquivos Markdown (.md) ou textos (.txt), ou ativar o botão <strong>🌐 Web</strong> abaixo para pesquisar na internet!
                   </>
                 ) : (
                   <>
@@ -923,9 +923,9 @@ export default function ChatApp() {
           >
             <div className="modal-header">
               <div>
-                <h3>Upload de PDFs em Lote — Tópico "{activeSubject}"</h3>
+                <h3>Upload de Arquivos em Lote — Tópico "{activeSubject}"</h3>
                 <p className="modal-subtitle">
-                  Selecione múltiplos arquivos (.pdf) de uma vez. O processamento em fila indexa cada arquivo com páginas e vetores.
+                  Selecione múltiplos arquivos (.pdf, .md, .txt) de uma vez. O processamento em fila indexa cada arquivo com páginas/seções e vetores.
                 </p>
               </div>
               <button
@@ -954,16 +954,16 @@ export default function ChatApp() {
             >
               <UploadCloud size={36} className="dropzone-icon" />
               <div className="dropzone-title">
-                Arraste e solte seus PDFs aqui ou clique para selecionar
+                Arraste e solte seus arquivos aqui ou clique para selecionar
               </div>
               <div className="dropzone-subtitle">
-                Envie todos os 10, 20 ou mais PDFs simultaneamente de uma só vez
+                Envie múltiplos arquivos (.pdf, .md, .txt) simultaneamente de uma só vez
               </div>
               <input
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".pdf"
+                accept=".pdf,.md,.markdown,.txt"
                 style={{ display: 'none' }}
                 onChange={(e) => {
                   handleFilesSelected(e.target.files);
@@ -1074,7 +1074,7 @@ export default function ChatApp() {
                 uploadQueue.length > 0 &&
                 uploadQueue.some((i) => i.status !== 'done') && (
                   <button className="btn-submit" onClick={handleBatchUpload}>
-                    Iniciar Upload de {uploadQueue.filter((i) => i.status !== 'done').length} PDF(s)
+                    Iniciar Upload de {uploadQueue.filter((i) => i.status !== 'done').length} Arquivo(s)
                   </button>
                 )}
 
@@ -1147,7 +1147,7 @@ export default function ChatApp() {
                         target="_blank"
                         rel="noreferrer"
                         className="btn-view-doc"
-                        title="Abrir arquivo PDF original em nova aba"
+                        title="Abrir arquivo original em nova aba"
                       >
                         <ExternalLink size={14} />
                         <span>Abrir</span>

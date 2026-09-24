@@ -16,7 +16,7 @@ export type ProcessFileResult = {
   error?: string;
 };
 
-async function processSinglePdf(
+async function processSingleDocument(
   file: File,
   materia: string,
   batchId?: string
@@ -30,45 +30,102 @@ async function processSinglePdf(
     });
   }
 
-  const arrayBuffer = await file.arrayBuffer();
-  const pdfBuffer = Buffer.from(arrayBuffer);
+  const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+  const isPdf = ext === '.pdf';
+  const isMarkdown = ext === '.md' || ext === '.markdown';
+  const isText = ext === '.txt';
 
-  // Extrai texto página por página preservando o número exato da página
-  const pages: { pageNumber: number; text: string }[] = [];
-  const render_page = (pageData: any) => {
-    const render_options = { normalizeWhitespace: false, disableCombineTextItems: false };
-    return pageData.getTextContent(render_options).then((textContent: any) => {
-      let lastY: any, pageText = '';
-      for (const item of textContent.items) {
-        if (lastY === item.transform[5] || !lastY) {
-          pageText += item.str;
-        } else {
-          pageText += '\n' + item.str;
-        }
-        lastY = item.transform[5];
-      }
-      const pageNumber = (pageData.pageIndex ?? 0) + 1;
-      const trimmed = pageText.trim();
-      if (trimmed.length > 0) {
-        pages.push({ pageNumber, text: trimmed });
-      }
-      return pageText;
-    });
-  };
-
-  const pdfData = await pdfParse(pdfBuffer, { pagerender: render_page });
-
-  if (pages.length === 0 || !pdfData.text || pdfData.text.trim().length === 0) {
+  if (!isPdf && !isMarkdown && !isText) {
+    const errorMsg = `Formato "${ext}" não suportado. Por favor, envie arquivos .pdf, .md ou .txt.`;
     if (batchId) {
       await recordBatchFileStatus(batchId, file.name, {
         status: 'failed',
-        error: 'Nenhum texto legível encontrado no PDF.',
+        error: errorMsg,
       });
     }
-    throw new Error(`Nenhum texto legível encontrado no arquivo "${file.name}".`);
+    throw new Error(errorMsg);
   }
 
-  // Chunking inteligente com RecursiveCharacterTextSplitter e overlap por página
+  const arrayBuffer = await file.arrayBuffer();
+  const pages: { pageNumber: number; text: string }[] = [];
+  let contentType = 'application/pdf';
+
+  if (isPdf) {
+    const pdfBuffer = Buffer.from(arrayBuffer);
+    const render_page = (pageData: any) => {
+      const render_options = { normalizeWhitespace: false, disableCombineTextItems: false };
+      return pageData.getTextContent(render_options).then((textContent: any) => {
+        let lastY: any, pageText = '';
+        for (const item of textContent.items) {
+          if (lastY === item.transform[5] || !lastY) {
+            pageText += item.str;
+          } else {
+            pageText += '\n' + item.str;
+          }
+          lastY = item.transform[5];
+        }
+        const pageNumber = (pageData.pageIndex ?? 0) + 1;
+        const trimmed = pageText.trim();
+        if (trimmed.length > 0) {
+          pages.push({ pageNumber, text: trimmed });
+        }
+        return pageText;
+      });
+    };
+
+    const pdfData = await pdfParse(pdfBuffer, { pagerender: render_page });
+    if (pages.length === 0 || !pdfData.text || pdfData.text.trim().length === 0) {
+      if (batchId) {
+        await recordBatchFileStatus(batchId, file.name, {
+          status: 'failed',
+          error: 'Nenhum texto legível encontrado no PDF.',
+        });
+      }
+      throw new Error(`Nenhum texto legível encontrado no PDF "${file.name}".`);
+    }
+  } else {
+    // Markdown (.md) ou Texto (.txt)
+    contentType = isMarkdown ? 'text/markdown; charset=utf-8' : 'text/plain; charset=utf-8';
+    const rawText = Buffer.from(arrayBuffer).toString('utf-8');
+
+    if (!rawText || rawText.trim().length === 0) {
+      if (batchId) {
+        await recordBatchFileStatus(batchId, file.name, {
+          status: 'failed',
+          error: 'O arquivo de texto/markdown está vazio.',
+        });
+      }
+      throw new Error(`O arquivo "${file.name}" está vazio.`);
+    }
+
+    // Divide arquivos Markdown e Texto em seções lógicas equivalentes a páginas (~1500 caracteres)
+    const chunkSizeTarget = 1500;
+    const paragraphs = rawText.split(/\n\s*\n/);
+    let currentPageText = '';
+    let pageNum = 1;
+
+    for (const para of paragraphs) {
+      const trimmedPara = para.trim();
+      if (!trimmedPara) continue;
+
+      if (currentPageText.length + trimmedPara.length > chunkSizeTarget && currentPageText.length > 0) {
+        pages.push({ pageNumber: pageNum++, text: currentPageText.trim() });
+        currentPageText = trimmedPara;
+      } else {
+        currentPageText = currentPageText ? `${currentPageText}\n\n${trimmedPara}` : trimmedPara;
+      }
+    }
+
+    if (currentPageText.trim().length > 0) {
+      pages.push({ pageNumber: pageNum, text: currentPageText.trim() });
+    }
+
+    if (pages.length === 0) {
+      pages.push({ pageNumber: 1, text: rawText.trim() });
+    }
+  }
+
+  // Chunking inteligente com RecursiveCharacterTextSplitter e overlap
   const splitter = new RecursiveCharacterTextSplitter({
     chunkSize: 1000,
     chunkOverlap: 200,
@@ -90,7 +147,7 @@ async function processSinglePdf(
   // Remove chunks antigos do mesmo documento neste tópico se houver
   await collection.deleteMany({ source: file.name, materia });
 
-  // Armazena o arquivo PDF original no GridFS do MongoDB para visualização e download
+  // Armazena o arquivo original no GridFS do MongoDB para visualização e download
   const bucket = new GridFSBucket(db, { bucketName: 'pdf_files' });
 
   // Remove versões antigas do mesmo arquivo na mesma matéria se houver
@@ -102,7 +159,7 @@ async function processSinglePdf(
   const uploadStream = bucket.openUploadStream(file.name, {
     metadata: {
       materia,
-      contentType: 'application/pdf',
+      contentType,
       size: file.size,
       uploadedAt: new Date(),
     },
@@ -164,7 +221,7 @@ export async function POST(req: NextRequest) {
 
     if (files.length === 0) {
       return NextResponse.json(
-        { error: 'Nenhum arquivo PDF fornecido para upload.' },
+        { error: 'Nenhum arquivo (PDF, Markdown ou Texto) fornecido para upload.' },
         { status: 400 }
       );
     }
@@ -183,7 +240,7 @@ export async function POST(req: NextRequest) {
     const results: ProcessFileResult[] = [];
     for (const file of files) {
       try {
-        const res = await processSinglePdf(file, materia, batchId);
+        const res = await processSingleDocument(file, materia, batchId);
         results.push(res);
       } catch (err: any) {
         console.error(`Erro ao processar arquivo "${file.name}":`, err);

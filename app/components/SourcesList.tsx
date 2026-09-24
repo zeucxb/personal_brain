@@ -100,9 +100,11 @@ export default function SourcesList({
                     onClick={(e) => e.stopPropagation()}
                     title={
                       isDoc
-                        ? src.page
-                          ? `Abrir PDF original na página ${src.page}`
-                          : 'Abrir arquivo PDF original'
+                        ? src.source.toLowerCase().endsWith('.pdf')
+                          ? src.page
+                            ? `Abrir PDF original na página ${src.page}`
+                            : 'Abrir arquivo PDF original'
+                          : 'Abrir arquivo original'
                         : 'Abrir link original'
                     }
                   >
@@ -114,9 +116,11 @@ export default function SourcesList({
               <div className="source-card-meta">
                 {isDoc ? (
                   <>
-                    <span className="source-meta-tag">{src.materia || 'PDF'}</span>
+                    <span className="source-meta-tag">{src.materia || 'Doc'}</span>
                     {src.page && (
-                      <span className="source-meta-tag source-page-tag">Pág. {src.page}</span>
+                      <span className="source-meta-tag source-page-tag">
+                        {src.source.toLowerCase().endsWith('.pdf') ? 'Pág.' : 'Seção'} {src.page}
+                      </span>
                     )}
                   </>
                 ) : (
@@ -149,7 +153,7 @@ export default function SourcesList({
                       <>
                         Documento do tópico: <strong>{selectedSource.materia || 'Geral'}</strong>
                         {selectedSource.page && (
-                          <> • Página: <strong>{selectedSource.page}</strong></>
+                          <> • {selectedSource.source.toLowerCase().endsWith('.pdf') ? 'Página' : 'Seção'}: <strong>{selectedSource.page}</strong></>
                         )}
                       </>
                     ) : (
@@ -190,9 +194,11 @@ export default function SourcesList({
                 >
                   <ExternalLink size={14} />{' '}
                   {selectedSource.type === 'document'
-                    ? selectedSource.page
-                      ? `Abrir PDF na página ${selectedSource.page}`
-                      : 'Abrir PDF original'
+                    ? selectedSource.source.toLowerCase().endsWith('.pdf')
+                      ? selectedSource.page
+                        ? `Abrir PDF na página ${selectedSource.page}`
+                        : 'Abrir PDF original'
+                      : 'Abrir arquivo original'
                     : 'Abrir página original'}
                 </a>
               )}
