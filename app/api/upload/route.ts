@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import clientPromise, { ensureVectorIndex } from '@/lib/mongodb';
 import { OllamaEmbeddings } from '@langchain/community/embeddings/ollama';
 import { MongoDBAtlasVectorSearch } from '@langchain/mongodb';
+import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import pdfParse from 'pdf-parse';
-import { Document } from '@langchain/core/documents';
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,19 +16,23 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Faltando arquivo ou matéria' }, { status: 400 });
     }
 
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const pdfData = await pdfParse(buffer);
+    const arrayBuffer = await file.arrayBuffer();
+    const pdfData = await pdfParse(new Uint8Array(arrayBuffer));
     const text = pdfData.text;
 
-    // Chunking simples
-    const chunkSize = 1000;
-    const chunks = [];
-    for (let i = 0; i < text.length; i += chunkSize) {
-      chunks.push(text.substring(i, i + chunkSize));
+    if (!text || text.trim().length === 0) {
+      return NextResponse.json({ error: 'Nenhum texto legível encontrado no PDF.' }, { status: 400 });
     }
 
-    const docs = chunks.map(
-      (chunk) => new Document({ pageContent: chunk, metadata: { materia, source: file.name } })
+    // Chunking inteligente com RecursiveCharacterTextSplitter e overlap
+    const splitter = new RecursiveCharacterTextSplitter({
+      chunkSize: 1000,
+      chunkOverlap: 200,
+    });
+
+    const docs = await splitter.createDocuments(
+      [text],
+      [{ materia, source: file.name }]
     );
 
     const client = await clientPromise;
@@ -47,7 +51,7 @@ export async function POST(req: NextRequest) {
       embeddingKey: 'embedding',
     });
 
-    return NextResponse.json({ success: true, chunks: chunks.length });
+    return NextResponse.json({ success: true, chunks: docs.length });
   } catch (error: any) {
     console.error(error);
     return NextResponse.json({ error: error.message }, { status: 500 });

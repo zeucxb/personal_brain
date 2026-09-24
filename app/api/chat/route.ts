@@ -9,7 +9,12 @@ import { RunnableSequence } from '@langchain/core/runnables';
 
 function formatDocumentsAsString(documents: any[]) {
   if (!documents || documents.length === 0) return 'Nenhum documento encontrado para esta matéria.';
-  return documents.map((doc) => doc.pageContent).join('\n\n');
+  return documents
+    .map((doc) => {
+      const src = doc.metadata?.source ? `[Documento: ${doc.metadata.source}]\n` : '';
+      return `${src}${doc.pageContent}`;
+    })
+    .join('\n\n---\n\n');
 }
 
 export async function POST(req: NextRequest) {
@@ -39,7 +44,7 @@ export async function POST(req: NextRequest) {
     });
 
     const retriever = vectorStore.asRetriever({
-      filter: { preFilter: { materia } },
+      filter: { preFilter: { materia: { $eq: materia } } },
       k: 5,
     });
 

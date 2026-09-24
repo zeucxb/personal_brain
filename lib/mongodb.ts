@@ -51,6 +51,12 @@ export async function ensureVectorIndex() {
           ],
         },
       });
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 1000));
+        const current = await collection.listSearchIndexes().toArray();
+        const found = current.find((idx: any) => idx.name === 'vector_index');
+        if (found && found.queryable) break;
+      }
     }
   } catch (error) {
     console.error('Error ensuring vector index:', error);
