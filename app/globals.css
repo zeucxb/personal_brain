@@ -534,6 +534,41 @@ body {
   white-space: nowrap;
 }
 
+.subject-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.subject-item:hover .subject-actions-row {
+  opacity: 1;
+}
+
+.subject-action-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.25rem;
+  border-radius: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.subject-action-btn:hover {
+  color: var(--accent);
+  background: rgba(59, 130, 246, 0.15);
+}
+
+.subject-action-btn.delete:hover {
+  color: var(--danger);
+  background: rgba(239, 68, 68, 0.15);
+}
+
 .subject-delete-btn {
   background: transparent;
   border: none;

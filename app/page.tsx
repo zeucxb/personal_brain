@@ -14,6 +14,7 @@ import {
   MessageSquare,
   Globe,
   ExternalLink,
+  Pencil,
 } from 'lucide-react';
 
 import SourcesList, { ChatSource, linkifyCitations } from './components/SourcesList';
@@ -429,7 +430,7 @@ export default function ChatApp() {
   const handleDeleteDocument = async (filename: string, materia: string) => {
     if (
       !confirm(
-        `Tem certeza que deseja excluir o documento "${filename}" da matéria "${materia}"?\nOs dados vetoriais serão removidos.`
+        `Tem certeza que deseja excluir o documento "${filename}" do tópico "${materia}"?\nOs dados vetoriais serão removidos.`
       )
     ) {
       return;
@@ -456,9 +457,47 @@ export default function ChatApp() {
     }
   };
 
+  const handleRenameSubject = async (e: React.MouseEvent, oldName: string) => {
+    e.stopPropagation();
+    if (oldName === 'Geral') return;
+
+    const newName = prompt(`Novo nome para o tópico "${oldName}":`, oldName);
+    if (!newName || !newName.trim() || newName.trim() === oldName) return;
+
+    const cleanNewName = newName.trim();
+    if (subjects.includes(cleanNewName)) {
+      alert(`Já existe um tópico com o nome "${cleanNewName}".`);
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/subjects', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldName, newName: cleanNewName }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        alert(err.error || 'Erro ao renomear tópico.');
+        return;
+      }
+
+      setSubjects((prev) => prev.map((s) => (s === oldName ? cleanNewName : s)));
+      if (activeSubject === oldName) {
+        setActiveSubject(cleanNewName);
+      }
+      await fetchDocuments();
+      await loadConversations(cleanNewName);
+    } catch (err) {
+      console.error('Error renaming topic:', err);
+      alert('Erro ao conectar ao servidor para renomear.');
+    }
+  };
+
   const handleDeleteSubject = async (e: React.MouseEvent, sub: string) => {
     e.stopPropagation();
-    if (!confirm(`Deseja excluir a matéria "${sub}", seus documentos e suas conversas?`)) {
+    if (!confirm(`Deseja excluir o tópico "${sub}", seus documentos e suas conversas?`)) {
       return;
     }
 
@@ -492,14 +531,14 @@ export default function ChatApp() {
           <span>RAG Chat</span>
         </h1>
 
-        {/* Section 1: Matérias */}
+        {/* Section 1: Tópicos */}
         <div className="sidebar-section-header">
-          <span className="sidebar-section-title">Matérias</span>
+          <span className="sidebar-section-title">Tópicos</span>
           <button
             className="add-sub-btn"
-            title="Criar nova matéria"
+            title="Criar novo tópico"
             onClick={() => {
-              const name = prompt('Nome da nova matéria:');
+              const name = prompt('Nome do novo tópico:');
               if (name && !subjects.includes(name.trim())) {
                 const cleanName = name.trim();
                 setSubjects([...subjects, cleanName]);
@@ -538,20 +577,29 @@ export default function ChatApp() {
                   )}
                 </div>
                 {!isGeral && (
-                  <button
-                    className="subject-delete-btn"
-                    title={`Excluir matéria ${sub}`}
-                    onClick={(e) => handleDeleteSubject(e, sub)}
-                  >
-                    <Trash2 size={13} />
-                  </button>
+                  <div className="subject-actions-row">
+                    <button
+                      className="subject-action-btn"
+                      title={`Renomear tópico "${sub}"`}
+                      onClick={(e) => handleRenameSubject(e, sub)}
+                    >
+                      <Pencil size={12} />
+                    </button>
+                    <button
+                      className="subject-action-btn delete"
+                      title={`Excluir tópico "${sub}"`}
+                      onClick={(e) => handleDeleteSubject(e, sub)}
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
                 )}
               </div>
             );
           })}
         </div>
 
-        {/* Section 2: Conversas da Matéria Ativa */}
+        {/* Section 2: Conversas do Tópico Ativo */}
         <div className="conversations-section">
           <div className="sidebar-section-header">
             <span className="sidebar-section-title">
@@ -560,7 +608,7 @@ export default function ChatApp() {
             <button
               className="new-chat-btn"
               onClick={handleCreateNewConversation}
-              title="Iniciar nova conversa nesta matéria"
+              title="Iniciar nova conversa neste tópico"
             >
               <Plus size={14} />
               <span>Nova</span>
@@ -602,7 +650,7 @@ export default function ChatApp() {
             <div className="chat-title-row">
               <h2>{activeSubject}</h2>
               {activeSubject === 'Geral' ? (
-                <span className="global-scope-pill" title="A matéria Geral tem acesso a todos os PDFs">
+                <span className="global-scope-pill" title="O tópico Geral tem acesso a todos os PDFs">
                   <Globe size={13} /> Acesso a todo o acervo ({documents.length} PDFs)
                 </span>
               ) : (
@@ -636,10 +684,10 @@ export default function ChatApp() {
             ) : (
               <button
                 className="upload-btn"
-                title="Para fazer upload, selecione uma matéria específica ou crie uma"
+                title="Para fazer upload, selecione um tópico específico ou crie um"
                 onClick={() => {
                   const targetSubject = prompt(
-                    'Para qual matéria deseja enviar o PDF? Digite o nome da matéria:',
+                    'Para qual tópico deseja enviar o PDF? Digite o nome do tópico:',
                     'Direito Empresarial'
                   );
                   if (targetSubject && targetSubject.trim()) {
@@ -667,23 +715,23 @@ export default function ChatApp() {
               </div>
               <h3>
                 {activeSubject === 'Geral'
-                  ? 'Chat Global (Todas as Matérias)'
+                  ? 'Chat Global (Todos os Tópicos)'
                   : `Conversar sobre ${activeSubject}`}
               </h3>
               <p>
                 {activeSubject === 'Geral' ? (
                   <>
-                    A matéria <strong>Geral</strong> busca contexto em <strong>todos os PDFs cadastrados no sistema</strong> ({documents.length} documentos no total).<br />
-                    Pergunte qualquer coisa sobre qualquer matéria que o Llama 3 encontrará as respostas!
+                    O tópico <strong>Geral</strong> busca contexto em <strong>todos os PDFs cadastrados no sistema</strong> ({documents.length} documentos no total).<br />
+                    Pergunte qualquer coisa sobre qualquer tópico que o Llama 3 encontrará as respostas!
                   </>
                 ) : currentSubjectDocs.length === 0 ? (
                   <>
-                    Esta matéria ainda não possui documentos indexados.<br />
+                    Este tópico ainda não possui documentos indexados.<br />
                     Você pode clicar em <strong>Upload PDF</strong> para anexar apostilas ou ativar o botão <strong>🌐 Web</strong> abaixo para pesquisar na internet!
                   </>
                 ) : (
                   <>
-                    Esta matéria possui <strong>{currentSubjectDocs.length}</strong> documento(s) com busca vetorial ativa.<br />
+                    Este tópico possui <strong>{currentSubjectDocs.length}</strong> documento(s) com busca vetorial ativa.<br />
                     Faça uma pergunta sobre o conteúdo para o Llama 3 responder com base nas fontes (ou ative <strong>🌐 Web</strong> para complementar com a internet)!
                   </>
                 )}
@@ -725,7 +773,7 @@ export default function ChatApp() {
                 webSearchEnabled
                   ? `Pesquisar na Web e no acervo (${activeSubject})...`
                   : activeSubject === 'Geral'
-                  ? 'Pergunte algo no acervo global de todas as matérias...'
+                  ? 'Pergunte algo no acervo global de todos os tópicos...'
                   : `Pergunte algo sobre ${activeSubject}...`
               }
               value={input}
@@ -744,7 +792,7 @@ export default function ChatApp() {
         <div className="modal-overlay" onClick={() => !uploading && setShowUploadModal(false)}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h3>Upload de PDF para "{activeSubject}"</h3>
+              <h3>Upload de PDF para o tópico "{activeSubject}"</h3>
               <button
                 className="close-btn"
                 onClick={() => setShowUploadModal(false)}
@@ -800,7 +848,7 @@ export default function ChatApp() {
                 <h3>
                   {activeSubject === 'Geral'
                     ? 'Todos os Documentos do Acervo'
-                    : `Documentos de ${activeSubject}`}
+                    : `Documentos do Tópico: ${activeSubject}`}
                 </h3>
                 <p className="modal-subtitle">
                   {currentSubjectDocs.length} arquivo(s) salvos no MongoDB com busca vetorial
@@ -815,7 +863,7 @@ export default function ChatApp() {
               {currentSubjectDocs.length === 0 ? (
                 <div className="doc-list-empty">
                   <FileText size={40} className="empty-icon" />
-                  <p>Nenhum documento cadastrado nesta matéria.</p>
+                  <p>Nenhum documento cadastrado neste tópico.</p>
                   <button
                     className="btn-submit small-btn"
                     onClick={() => {

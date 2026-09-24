@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
               if (s.type === 'web') {
                 return `[${s.index}] Fonte Web: ${s.title} (Origem: ${s.source} | URL: ${s.url})\nConteúdo: ${s.snippet}`;
               }
-              return `[${s.index}] Documento: ${s.title} (Matéria: ${s.materia})\nConteúdo: ${s.snippet}`;
+              return `[${s.index}] Documento: ${s.title} (Tópico: ${s.materia})\nConteúdo: ${s.snippet}`;
             })
             .join('\n\n---\n\n')
         : 'Nenhum documento ou fonte web relevante encontrada.';
@@ -168,8 +168,8 @@ export async function POST(req: NextRequest) {
     });
 
     let scopeDescription = isGlobal
-      ? 'em todas as matérias cadastradas no acervo global'
-      : `na matéria "${materia}"`;
+      ? 'em todos os tópicos cadastrados no acervo global'
+      : `no tópico "${materia}"`;
 
     if (shouldSearchWeb) {
       scopeDescription += ' e com acesso a pesquisas na Web em tempo real';

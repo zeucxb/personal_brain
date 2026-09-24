@@ -126,7 +126,7 @@ export default function SourcesList({
                   <p className="modal-subtitle">
                     {selectedSource.type === 'document' ? (
                       <>
-                        Documento da matéria: <strong>{selectedSource.materia || 'Geral'}</strong>
+                        Documento do tópico: <strong>{selectedSource.materia || 'Geral'}</strong>
                       </>
                     ) : (
                       <>
