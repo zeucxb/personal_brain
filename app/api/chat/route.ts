@@ -97,12 +97,14 @@ export async function POST(req: NextRequest) {
       if (!seen.has(key) && snippet.length > 0) {
         seen.add(key);
         const index = sources.length + 1;
+        const fileUrl = `/api/documents/file?filename=${encodeURIComponent(srcName)}&materia=${encodeURIComponent(docMateria)}`;
         sources.push({
           id: `doc-${index}`,
           index,
           type: 'document',
           title: srcName,
           source: srcName,
+          url: fileUrl,
           snippet: snippet.length > 350 ? snippet.slice(0, 350) + '...' : snippet,
           materia: docMateria,
         });

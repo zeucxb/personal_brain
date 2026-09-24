@@ -4,6 +4,8 @@ import { OllamaEmbeddings } from '@langchain/community/embeddings/ollama';
 import { MongoDBAtlasVectorSearch } from '@langchain/mongodb';
 import { RecursiveCharacterTextSplitter } from '@langchain/textsplitters';
 import pdfParse from 'pdf-parse';
+import { GridFSBucket } from 'mongodb';
+import { Readable } from 'stream';
 
 export async function POST(req: NextRequest) {
   try {
@@ -38,6 +40,31 @@ export async function POST(req: NextRequest) {
     const client = await clientPromise;
     const db = client.db('ragchat');
     const collection = db.collection('documents');
+
+    // Armazena o arquivo PDF original no GridFS do MongoDB para visualização e download
+    const bucket = new GridFSBucket(db, { bucketName: 'pdf_files' });
+
+    // Remove versões antigas do mesmo arquivo na mesma matéria se houver
+    const existing = await bucket.find({ filename: file.name, 'metadata.materia': materia }).toArray();
+    for (const doc of existing) {
+      await bucket.delete(doc._id);
+    }
+
+    const uploadStream = bucket.openUploadStream(file.name, {
+      metadata: {
+        materia,
+        contentType: 'application/pdf',
+        size: file.size,
+        uploadedAt: new Date(),
+      },
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      const nodeReadable = Readable.from(Buffer.from(arrayBuffer));
+      nodeReadable.pipe(uploadStream)
+        .on('finish', () => resolve())
+        .on('error', reject);
+    });
 
     const embeddings = new OllamaEmbeddings({
       model: 'nomic-embed-text',

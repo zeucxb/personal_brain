@@ -13,6 +13,7 @@ import {
   Layers,
   MessageSquare,
   Globe,
+  ExternalLink,
 } from 'lucide-react';
 
 import SourcesList, { ChatSource } from './components/SourcesList';
@@ -785,21 +786,33 @@ export default function ChatApp() {
                       </div>
                     </div>
 
-                    <button
-                      className="btn-delete-doc"
-                      title="Excluir documento do banco vetorial"
-                      disabled={deletingDoc === doc.filename}
-                      onClick={() => handleDeleteDocument(doc.filename, doc.materia)}
-                    >
-                      {deletingDoc === doc.filename ? (
-                        <span className="loader small-loader"></span>
-                      ) : (
-                        <>
-                          <Trash2 size={15} />
-                          <span>Excluir</span>
-                        </>
-                      )}
-                    </button>
+                    <div className="doc-actions-group">
+                      <a
+                        href={`/api/documents/file?filename=${encodeURIComponent(doc.filename)}&materia=${encodeURIComponent(doc.materia)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn-view-doc"
+                        title="Abrir arquivo PDF original em nova aba"
+                      >
+                        <ExternalLink size={14} />
+                        <span>Abrir</span>
+                      </a>
+                      <button
+                        className="btn-delete-doc"
+                        title="Excluir documento do banco vetorial"
+                        disabled={deletingDoc === doc.filename}
+                        onClick={() => handleDeleteDocument(doc.filename, doc.materia)}
+                      >
+                        {deletingDoc === doc.filename ? (
+                          <span className="loader small-loader"></span>
+                        ) : (
+                          <>
+                            <Trash2 size={15} />
+                            <span>Excluir</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
                   </div>
                 ))
               )}

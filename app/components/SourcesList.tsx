@@ -58,7 +58,7 @@ export default function SourcesList({ sources }: SourcesListProps) {
                     rel="noreferrer"
                     className="source-link"
                     onClick={(e) => e.stopPropagation()}
-                    title="Abrir link original"
+                    title={isDoc ? 'Abrir arquivo PDF original' : 'Abrir link original'}
                   >
                     <ExternalLink size={12} />
                   </a>
@@ -127,7 +127,8 @@ export default function SourcesList({ sources }: SourcesListProps) {
                   rel="noreferrer"
                   className="btn-submit"
                 >
-                  <ExternalLink size={14} /> Abrir página original
+                  <ExternalLink size={14} />{' '}
+                  {selectedSource.type === 'document' ? 'Abrir PDF original' : 'Abrir página original'}
                 </a>
               )}
               <button className="btn-cancel" onClick={() => setSelectedSource(null)}>

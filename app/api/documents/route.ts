@@ -61,6 +61,18 @@ export async function DELETE(req: NextRequest) {
       source: filename,
     });
 
+    // Remove também o arquivo original do GridFS
+    try {
+      const { GridFSBucket } = await import('mongodb');
+      const bucket = new GridFSBucket(db, { bucketName: 'pdf_files' });
+      const files = await bucket.find({ filename, 'metadata.materia': materia }).toArray();
+      for (const f of files) {
+        await bucket.delete(f._id);
+      }
+    } catch (fsErr) {
+      console.warn('GridFS delete warning:', fsErr);
+    }
+
     return NextResponse.json({
       success: true,
       deletedCount: result.deletedCount,

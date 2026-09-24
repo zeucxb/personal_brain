@@ -25,6 +25,19 @@ export async function DELETE(req: Request) {
     const db = client.db('ragchat');
     const result = await db.collection('documents').deleteMany({ materia });
     await db.collection('conversations').deleteMany({ materia });
+
+    // Remove arquivos do GridFS vinculados a essa matéria
+    try {
+      const { GridFSBucket } = await import('mongodb');
+      const bucket = new GridFSBucket(db, { bucketName: 'pdf_files' });
+      const files = await bucket.find({ 'metadata.materia': materia }).toArray();
+      for (const f of files) {
+        await bucket.delete(f._id);
+      }
+    } catch (fsErr) {
+      console.warn('GridFS cascade delete warning:', fsErr);
+    }
+
     return NextResponse.json({ success: true, deletedCount: result.deletedCount });
   } catch (e: any) {
     return NextResponse.json({ error: e.message }, { status: 500 });
