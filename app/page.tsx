@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 type Message = {
   id: string;
@@ -72,19 +74,24 @@ export default function ChatApp() {
       const decoder = new TextDecoder();
       let done = false;
 
+      let accumulatedText = '';
       while (!done) {
         const { value, done: doneReading } = await reader.read();
         done = doneReading;
-        const chunkValue = decoder.decode(value, { stream: true });
-        
-        setMessages((prev) => {
-          const updated = [...(prev[activeSubject] || [])];
-          const lastIndex = updated.length - 1;
-          if (updated[lastIndex].id === botMsgId) {
-            updated[lastIndex].content += chunkValue;
-          }
-          return { ...prev, [activeSubject]: updated };
-        });
+        if (value) {
+          const chunkValue = decoder.decode(value, { stream: !done });
+          accumulatedText += chunkValue;
+
+          setMessages((prev) => {
+            const currentList = prev[activeSubject] || [];
+            return {
+              ...prev,
+              [activeSubject]: currentList.map((m) =>
+                m.id === botMsgId ? { ...m, content: accumulatedText } : m
+              ),
+            };
+          });
+        }
       }
     } catch (error) {
       console.error('Error in chat:', error);
@@ -176,7 +183,23 @@ export default function ChatApp() {
           ) : (
             currentMessages.map((msg) => (
               <div key={msg.id} className={`message ${msg.role}`}>
-                {msg.content}
+                {msg.role === 'assistant' ? (
+                  msg.content ? (
+                    <div className="markdown-content">
+                      <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {msg.content}
+                      </ReactMarkdown>
+                    </div>
+                  ) : (
+                    <div className="typing-indicator">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </div>
+                  )
+                ) : (
+                  msg.content
+                )}
               </div>
             ))
           )}

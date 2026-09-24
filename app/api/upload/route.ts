@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     }
 
     const arrayBuffer = await file.arrayBuffer();
-    const pdfData = await pdfParse(new Uint8Array(arrayBuffer));
+    const pdfData = await pdfParse(new Uint8Array(arrayBuffer) as unknown as Buffer);
     const text = pdfData.text;
 
     if (!text || text.trim().length === 0) {

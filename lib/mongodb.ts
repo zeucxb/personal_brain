@@ -54,7 +54,7 @@ export async function ensureVectorIndex() {
       for (let i = 0; i < 20; i++) {
         await new Promise((r) => setTimeout(r, 1000));
         const current = await collection.listSearchIndexes().toArray();
-        const found = current.find((idx: any) => idx.name === 'vector_index');
+        const found = current.find((idx: any) => idx.name === 'vector_index') as any;
         if (found && found.queryable) break;
       }
     }
