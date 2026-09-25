@@ -43,6 +43,7 @@ import {
   InfographicWidget,
   PromptProposalWidget,
   PromptProposal,
+  PromptDiffViewer,
   TableWidget,
   HtmlPreviewWidget,
   ImageViewerWidget,
@@ -2878,120 +2879,123 @@ Estrutura recomendada para a resposta do Fórum:
         </div>
       )}
 
-      {/* Proposal Approval Modal */}
-      {proposalModal && (
-        <div
-          className="modal-overlay"
-          onClick={() => !isModalApproving && setProposalModal(null)}
-        >
+      {/* Proposal Approval Modal with Visual Diff */}
+      {proposalModal && (() => {
+        const isSkill = proposalModal.target === 'skill';
+        const targetSkill = isSkill
+          ? skills.find((s) => s.id === proposalModal.id || s.name.toLowerCase() === proposalModal.name?.toLowerCase()) || currentSkill
+          : null;
+        const targetAgent = !isSkill
+          ? agents.find((a) => a.id === proposalModal.id || a.name.toLowerCase() === proposalModal.name?.toLowerCase()) || currentAgent
+          : null;
+        const oldPrompt = isSkill ? (targetSkill?.promptInstruction || '') : (targetAgent?.systemPrompt || '');
+        const oldDescription = isSkill ? (targetSkill?.description || '') : (targetAgent?.description || '');
+        const targetName = proposalModal.name || (isSkill ? targetSkill?.name || 'Skill' : targetAgent?.name || 'Agente');
+
+        return (
           <div
-            className="modal modal-proposal-approval"
-            onClick={(e) => e.stopPropagation()}
+            className="modal-overlay"
+            onClick={() => !isModalApproving && setProposalModal(null)}
           >
-            <div className="proposal-modal-header">
-              <div className="flex items-center gap-2">
-                <Sparkles size={20} className="text-amber-400" />
-                <h3 style={{ margin: 0 }}>
-                  Aprovação de Alteração:{' '}
-                  <span className="text-amber-300">
-                    {proposalModal.name ||
-                      (proposalModal.target === 'skill'
-                        ? currentSkill?.name || 'Skill'
-                        : currentAgent?.name || 'Agente')}
-                  </span>
-                </h3>
-              </div>
-              <button
-                type="button"
-                className="btn-close-modal"
-                onClick={() => !isModalApproving && setProposalModal(null)}
-                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            <div className="proposal-modal-body">
-              <div className="proposal-modal-banner">
-                <div className="banner-icon">
-                  {proposalModal.target === 'skill' ? <Zap size={16} /> : <Bot size={16} />}
+            <div
+              className="modal modal-proposal-approval"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="proposal-modal-header">
+                <div className="flex items-center gap-2">
+                  <Sparkles size={20} className="text-amber-400" />
+                  <h3 style={{ margin: 0 }}>
+                    Aprovação de Alteração:{' '}
+                    <span className="text-amber-300">
+                      {targetName}
+                    </span>
+                  </h3>
                 </div>
-                <div>
-                  <div className="banner-title">
-                    O assistente sugeriu atualizar{' '}
-                    {proposalModal.target === 'skill' ? 'as instruções da Skill' : 'o prompt do Agente'}
+                <button
+                  type="button"
+                  className="btn-close-modal"
+                  onClick={() => !isModalApproving && setProposalModal(null)}
+                  style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="proposal-modal-body">
+                <div className="proposal-modal-banner">
+                  <div className="banner-icon">
+                    {proposalModal.target === 'skill' ? <Zap size={16} /> : <Bot size={16} />}
                   </div>
-                  <div className="banner-desc">
-                    Revise as modificações propostas abaixo. Se aprovar, as novas diretrizes serão salvas
-                    no MongoDB e incorporadas imediatamente ao comportamento do assistente.
+                  <div>
+                    <div className="banner-title">
+                      O assistente sugeriu atualizar{' '}
+                      {proposalModal.target === 'skill' ? 'as instruções da Skill' : 'o prompt do Agente'}
+                    </div>
+                    <div className="banner-desc">
+                      Compare as alterações abaixo entre a versão atual (Antes) e a nova versão proposta (Depois).
+                      Ao aprovar, as modificações serão salvas no MongoDB e entrarão em vigor no assistente.
+                    </div>
                   </div>
                 </div>
-              </div>
 
-              {proposalModal.rationale && (
-                <div className="proposal-rationale-box">
-                  <strong>💡 Motivo da Proposta:</strong> {proposalModal.rationale}
-                </div>
-              )}
-
-              {proposalModal.description && (
-                <div className="proposal-diff-section">
-                  <div className="diff-section-label">Nova Descrição Proposta:</div>
-                  <div className="proposal-diff-text">{proposalModal.description}</div>
-                </div>
-              )}
-
-              <div className="proposal-diff-section">
-                <div className="diff-section-label">
-                  Novo Prompt de Sistema Proposto ({proposalModal.systemPrompt?.length || 0} caracteres):
-                </div>
-                <div className="proposal-modal-code-wrapper">
-                  <pre className="proposal-modal-code">{proposalModal.systemPrompt}</pre>
-                </div>
-              </div>
-            </div>
-
-            <div className="modal-actions" style={{ marginTop: '1.25rem' }}>
-              <button
-                type="button"
-                className="btn-cancel"
-                onClick={() => setProposalModal(null)}
-                disabled={isModalApproving}
-              >
-                Descartar
-              </button>
-              <button
-                type="button"
-                className="btn-submit btn-approve-modal"
-                disabled={isModalApproving}
-                onClick={async () => {
-                  setIsModalApproving(true);
-                  try {
-                    const ok = await handleApproveProposal(proposalModal);
-                    if (ok) {
-                      setProposalModal(null);
-                    }
-                  } finally {
-                    setIsModalApproving(false);
-                  }
-                }}
-              >
-                {isModalApproving ? (
-                  <>
-                    <Loader2 size={16} className="animate-spin" />
-                    <span>Aplicando...</span>
-                  </>
-                ) : (
-                  <>
-                    <CheckCircle2 size={16} />
-                    <span>Aprovar e Aplicar Agora</span>
-                  </>
+                {proposalModal.rationale && (
+                  <div className="proposal-rationale-box">
+                    <strong>💡 Motivo da Proposta:</strong> {proposalModal.rationale}
+                  </div>
                 )}
-              </button>
+
+                <PromptDiffViewer
+                  oldPrompt={oldPrompt}
+                  newPrompt={proposalModal.systemPrompt || ''}
+                  oldDescription={oldDescription}
+                  newDescription={proposalModal.description}
+                  targetName={targetName}
+                  targetType={proposalModal.target}
+                />
+              </div>
+
+              <div className="modal-actions" style={{ marginTop: '1.25rem' }}>
+                <button
+                  type="button"
+                  className="btn-cancel"
+                  onClick={() => setProposalModal(null)}
+                  disabled={isModalApproving}
+                >
+                  Descartar
+                </button>
+                <button
+                  type="button"
+                  className="btn-submit btn-approve-modal"
+                  disabled={isModalApproving}
+                  onClick={async () => {
+                    setIsModalApproving(true);
+                    try {
+                      const ok = await handleApproveProposal(proposalModal);
+                      if (ok) {
+                        setProposalModal(null);
+                      }
+                    } finally {
+                      setIsModalApproving(false);
+                    }
+                  }}
+                >
+                  {isModalApproving ? (
+                    <>
+                      <Loader2 size={16} className="animate-spin" />
+                      <span>Aplicando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={16} />
+                      <span>Aprovar e Aplicar Agora</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
