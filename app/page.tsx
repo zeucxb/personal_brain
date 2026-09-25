@@ -2145,25 +2145,41 @@ Estrutura recomendada para a resposta do Fórum:
             ) : (
               // FORM / EDITOR VIEW
               <form className="agent-form" onSubmit={handleSaveAgent}>
-                <div className="agent-form-row">
-                  <div className="agent-form-group">
-                    <label className="agent-form-label">Emoji / Ícone</label>
+                <div className="agent-form-group">
+                  <label className="agent-form-label">Nome do Agente Especialista</label>
+                  <input
+                    type="text"
+                    className="agent-form-input"
+                    placeholder="Ex: Especialista em Fóruns Avaliativos"
+                    value={agentFormName}
+                    onChange={(e) => setAgentFormName(e.target.value)}
+                    required
+                  />
+                  <span className="agent-form-hint">
+                    Dê um título que identifique claramente o propósito ou área de especialidade.
+                  </span>
+                </div>
+
+                <div className="agent-form-group">
+                  <label className="agent-form-label">Emoji / Ícone do Agente</label>
+                  <div className="agent-emoji-selector-row">
                     <input
                       type="text"
-                      className="agent-form-input"
-                      style={{ textAlign: 'center', fontSize: '1.25rem' }}
+                      className="agent-form-input agent-emoji-current-input"
                       value={agentFormAvatar}
                       onChange={(e) => setAgentFormAvatar(e.target.value)}
                       maxLength={4}
+                      title="Ícone selecionado (você também pode digitar outro emoji)"
                     />
                     <div className="agent-emoji-picker">
-                      {['🎓', '📝', '💡', '⚖️', '📐', '🤖', '🧪', '📊', '🔍', '⚡'].map(
+                      {['🎓', '📝', '💡', '⚖️', '📐', '🤖', '🧪', '📊', '🔍', '⚡', '🎯', '🚀', '🧠', '📚'].map(
                         (emo) => (
                           <button
                             key={emo}
                             type="button"
                             className={`emoji-choice-btn ${agentFormAvatar === emo ? 'selected' : ''}`}
                             onClick={() => setAgentFormAvatar(emo)}
+                            title={`Selecionar ${emo}`}
                           >
                             {emo}
                           </button>
@@ -2171,21 +2187,9 @@ Estrutura recomendada para a resposta do Fórum:
                       )}
                     </div>
                   </div>
-
-                  <div className="agent-form-group">
-                    <label className="agent-form-label">Nome do Agente Especialista</label>
-                    <input
-                      type="text"
-                      className="agent-form-input"
-                      placeholder="Ex: Especialista em Fóruns Avaliativos"
-                      value={agentFormName}
-                      onChange={(e) => setAgentFormName(e.target.value)}
-                      required
-                    />
-                    <span className="agent-form-hint">
-                      Dê um título que identifique claramente o propósito ou área de especialidade.
-                    </span>
-                  </div>
+                  <span className="agent-form-hint">
+                    Clique em um dos ícones acima para selecionar ou digite qualquer emoji no campo à esquerda.
+                  </span>
                 </div>
 
                 <div className="agent-form-group">
@@ -2408,33 +2412,42 @@ Estrutura recomendada para a resposta do Fórum:
             ) : (
               // FORM / EDITOR VIEW
               <form className="agent-form" onSubmit={handleSaveSkill}>
-                <div className="agent-form-row">
-                  <div className="agent-form-group">
-                    <label className="agent-form-label">Emoji / Ícone</label>
+                <div className="agent-form-group">
+                  <label className="agent-form-label">Nome da Skill</label>
+                  <input
+                    type="text"
+                    className="agent-form-input"
+                    placeholder="Ex: Flashcards Avançados, Simulado ENADE, etc."
+                    value={skillFormName}
+                    onChange={(e) => setSkillFormName(e.target.value)}
+                    required
+                  />
+                  <span className="agent-form-hint">
+                    Dê um nome curto e expressivo para a skill.
+                  </span>
+                </div>
+
+                <div className="agent-form-group">
+                  <label className="agent-form-label">Emoji / Ícone da Skill</label>
+                  <div className="agent-emoji-selector-row">
                     <input
                       type="text"
-                      className="agent-form-input"
-                      style={{ textAlign: 'center', fontSize: '1.25rem' }}
+                      className="agent-form-input agent-emoji-current-input"
                       value={skillFormIcon}
                       onChange={(e) => setSkillFormIcon(e.target.value)}
                       maxLength={4}
                       required
+                      title="Ícone selecionado"
                     />
-                    <div style={{ display: 'flex', gap: '0.35rem', marginTop: '0.4rem', flexWrap: 'wrap' }}>
+                    <div className="agent-emoji-picker">
                       {['💬', '🗂️', '📝', '🧠', '📊', '⚡', '💡', '🎯', '🔍', '📖', '🧪', '📌', '🚀'].map(
                         (emoji) => (
                           <button
                             key={emoji}
                             type="button"
+                            className={`emoji-choice-btn ${skillFormIcon === emoji ? 'selected' : ''}`}
                             onClick={() => setSkillFormIcon(emoji)}
-                            style={{
-                              background: skillFormIcon === emoji ? 'rgba(245, 158, 11, 0.3)' : 'rgba(255, 255, 255, 0.05)',
-                              border: '1px solid rgba(255, 255, 255, 0.1)',
-                              borderRadius: '0.3rem',
-                              padding: '0.2rem 0.4rem',
-                              cursor: 'pointer',
-                              fontSize: '0.9rem',
-                            }}
+                            title={`Selecionar ${emoji}`}
                           >
                             {emoji}
                           </button>
@@ -2442,18 +2455,9 @@ Estrutura recomendada para a resposta do Fórum:
                       )}
                     </div>
                   </div>
-
-                  <div className="agent-form-group" style={{ flex: 1 }}>
-                    <label className="agent-form-label">Nome da Skill</label>
-                    <input
-                      type="text"
-                      className="agent-form-input"
-                      placeholder="Ex: Flashcards Avançados, Simulado ENADE, etc."
-                      value={skillFormName}
-                      onChange={(e) => setSkillFormName(e.target.value)}
-                      required
-                    />
-                  </div>
+                  <span className="agent-form-hint">
+                    Clique em um ícone acima ou digite qualquer emoji no campo à esquerda.
+                  </span>
                 </div>
 
                 <div className="agent-form-row">
