@@ -4027,4 +4027,241 @@ body > div[id^="dmermaid_"] {
   }
 }
 
+/* ==========================================================================
+   Multimodal Image Attachment & Vision UI
+   ========================================================================== */
+
+.btn-attach-image {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid var(--panel-border) !important;
+  color: var(--text-muted) !important;
+  padding: 0.5rem 0.65rem !important;
+  border-radius: 0.75rem !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  flex-shrink: 0;
+}
+
+.btn-attach-image:hover {
+  background: rgba(255, 255, 255, 0.08) !important;
+  color: var(--text-main) !important;
+  border-color: rgba(255, 255, 255, 0.2) !important;
+  transform: translateY(-1px);
+}
+
+.btn-attach-image.active {
+  background: rgba(59, 130, 246, 0.15) !important;
+  border-color: rgba(59, 130, 246, 0.5) !important;
+  color: #60a5fa !important;
+}
+
+.btn-attach-image .attach-dot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #60a5fa;
+  box-shadow: 0 0 6px #60a5fa;
+}
+
+/* Attached Image Preview Bar (Above Input Box) */
+.attached-image-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: rgba(30, 41, 59, 0.75);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.85rem;
+  margin-bottom: 0.65rem;
+  animation: slideIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.attached-thumb-container {
+  width: 44px;
+  height: 44px;
+  border-radius: 0.5rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.attached-thumb-container:hover {
+  transform: scale(1.05);
+}
+
+.attached-thumb-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.attached-info {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+
+.attached-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-main);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.attached-hint {
+  font-size: 0.72rem;
+  color: #93c5fd;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.btn-remove-attached {
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: #f87171;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+}
+
+.btn-remove-attached:hover {
+  background: rgba(239, 68, 68, 0.25);
+  color: #fff;
+  transform: scale(1.08);
+}
+
+/* Drag & Drop Overlays */
+.input-area.drag-over {
+  position: relative;
+}
+
+.image-drop-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 1.25rem;
+  background: rgba(59, 130, 246, 0.12);
+  border: 2px dashed rgba(59, 130, 246, 0.6);
+  border-radius: 1rem;
+  margin-bottom: 0.75rem;
+  color: #93c5fd;
+  font-size: 0.92rem;
+  font-weight: 600;
+  pointer-events: none;
+  animation: pulse 1.5s infinite;
+}
+
+/* User Message with Image */
+.user-message-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.user-message-image-wrapper {
+  max-width: 320px;
+  max-height: 260px;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.user-message-image-wrapper:hover {
+  transform: scale(1.02);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+.user-message-image {
+  width: 100%;
+  height: 100%;
+  max-height: 260px;
+  object-fit: contain;
+  display: block;
+}
+
+.user-message-text {
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+/* Image Zoom Modal */
+.image-preview-modal-overlay {
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.image-preview-modal-content {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.image-preview-modal-img {
+  max-width: 100%;
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.btn-close-img-modal {
+  position: absolute;
+  top: -14px;
+  right: -14px;
+  background: #1e293b;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #fff;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.4);
+  transition: transform 0.15s ease, background 0.15s ease;
+  z-index: 10;
+}
+
+.btn-close-img-modal:hover {
+  background: #ef4444;
+  transform: scale(1.1);
+}
+
+
 

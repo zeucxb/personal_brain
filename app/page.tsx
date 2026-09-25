@@ -25,6 +25,8 @@ import {
   Settings,
   Zap,
   SlidersHorizontal,
+  Paperclip,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 import SourcesList, { ChatSource, linkifyCitations } from './components/SourcesList';
@@ -50,6 +52,7 @@ type Message = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  image?: string;
   sources?: ChatSource[];
 };
 
@@ -385,6 +388,102 @@ export default function ChatApp() {
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [subagentStatus, setSubagentStatus] = useState<string>('');
 
+  // Multimodal Image Attachment State (Ollama Vision)
+  const [attachedImage, setAttachedImage] = useState<string | null>(null);
+  const [attachedImageName, setAttachedImageName] = useState<string>('');
+  const [isImageDragOver, setIsImageDragOver] = useState(false);
+  const [previewModalImage, setPreviewModalImage] = useState<string | null>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  // Helper to optimize and convert an image file to Base64
+  const processImageFile = (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      alert('Por favor, selecione um arquivo de imagem válido (PNG, JPEG, WebP, GIF, etc.).');
+      return;
+    }
+    if (file.size > 25 * 1024 * 1024) {
+      alert('A imagem é muito grande. O limite máximo é 25MB.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (readerEvent) => {
+      const dataUrl = readerEvent.target?.result as string;
+      if (!dataUrl) return;
+
+      const img = new Image();
+      img.onload = () => {
+        const MAX_DIM = 1600;
+        let { width, height } = img;
+        if (width > MAX_DIM || height > MAX_DIM) {
+          if (width > height) {
+            height = Math.round((height * MAX_DIM) / width);
+            width = MAX_DIM;
+          } else {
+            width = Math.round((width * MAX_DIM) / height);
+            height = MAX_DIM;
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const optimizedDataUrl = canvas.toDataURL(
+              file.type === 'image/png' ? 'image/png' : 'image/jpeg',
+              0.88
+            );
+            setAttachedImage(optimizedDataUrl);
+            setAttachedImageName(file.name);
+            return;
+          }
+        }
+        setAttachedImage(dataUrl);
+        setAttachedImageName(file.name);
+      };
+      img.onerror = () => {
+        setAttachedImage(dataUrl);
+        setAttachedImageName(file.name);
+      };
+      img.src = dataUrl;
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleImageFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      processImageFile(e.target.files[0]);
+    }
+    e.target.value = '';
+  };
+
+  const handleImagePaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      if (items[i].type.startsWith('image/')) {
+        const file = items[i].getAsFile();
+        if (file) {
+          e.preventDefault();
+          processImageFile(file);
+          break;
+        }
+      }
+    }
+  };
+
+  const handleImageDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsImageDragOver(false);
+    if (e.dataTransfer?.files && e.dataTransfer.files.length > 0) {
+      const file = e.dataTransfer.files[0];
+      if (file.type.startsWith('image/')) {
+        processImageFile(file);
+      }
+    }
+  };
+
   // Modals state
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showDocsModal, setShowDocsModal] = useState(false);
@@ -512,6 +611,25 @@ export default function ChatApp() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [conversations, activeConvId]);
+
+  useEffect(() => {
+    const handleGlobalPaste = (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.startsWith('image/')) {
+          const file = items[i].getAsFile();
+          if (file) {
+            e.preventDefault();
+            processImageFile(file);
+            break;
+          }
+        }
+      }
+    };
+    window.addEventListener('paste', handleGlobalPaste);
+    return () => window.removeEventListener('paste', handleGlobalPaste);
+  }, []);
 
   const activeConversation =
     conversations.find((c) => c.id === activeConvId) || conversations[0] || null;
@@ -764,10 +882,16 @@ Estrutura recomendada para a resposta do Fórum:
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!input.trim() || isLoading || !activeConversation) return;
+    if ((!input.trim() && !attachedImage) || isLoading || !activeConversation) return;
 
-    const userMsgText = input.trim();
-    const userMsg: Message = { id: Date.now().toString(), role: 'user', content: userMsgText };
+    const userMsgText = input.trim() || 'Descreva e analise esta imagem detalhadamente.';
+    const currentAttachedImage = attachedImage;
+    const userMsg: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      content: userMsgText,
+      image: currentAttachedImage || undefined,
+    };
     const botMsgId = (Date.now() + 1).toString();
     const botMsgPlaceholder: Message = { id: botMsgId, role: 'assistant', content: '' };
 
@@ -788,6 +912,8 @@ Estrutura recomendada para a resposta do Fórum:
     );
 
     setInput('');
+    setAttachedImage(null);
+    setAttachedImageName('');
     setIsLoading(true);
 
     try {
@@ -796,6 +922,7 @@ Estrutura recomendada para a resposta do Fórum:
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: [...activeConversation.messages, userMsg],
+          image: currentAttachedImage || undefined,
           materia: activeSubject,
           webSearch: webSearchEnabled,
           agentId: activeAgentId,
@@ -1426,7 +1553,20 @@ Estrutura recomendada para a resposta do Fórum:
                     status={isLoading && idx === currentMessages.length - 1 ? subagentStatus : undefined}
                   />
                 ) : (
-                  msg.content
+                  <div className="user-message-container">
+                    {msg.image && (
+                      <div className="user-message-image-wrapper">
+                        <img
+                          src={msg.image}
+                          alt="Imagem enviada"
+                          className="user-message-image"
+                          onClick={() => setPreviewModalImage(msg.image || null)}
+                          title="Clique para ampliar a imagem"
+                        />
+                      </div>
+                    )}
+                    {msg.content && <div className="user-message-text">{msg.content}</div>}
+                  </div>
                 )}
               </div>
             ))
@@ -1434,7 +1574,55 @@ Estrutura recomendada para a resposta do Fórum:
           <div ref={messagesEndRef} />
         </div>
 
-        <form className="input-area" onSubmit={handleSend}>
+        <form
+          className={`input-area ${isImageDragOver ? 'drag-over' : ''}`}
+          onSubmit={handleSend}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsImageDragOver(true);
+          }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+              setIsImageDragOver(false);
+            }
+          }}
+          onDrop={handleImageDrop}
+        >
+          {isImageDragOver && (
+            <div className="image-drop-overlay">
+              <UploadCloud size={24} className="drop-icon" />
+              <span>Solte a imagem aqui para anexar</span>
+            </div>
+          )}
+
+          {/* Attached Image Preview Bar */}
+          {attachedImage && (
+            <div className="attached-image-bar">
+              <div
+                className="attached-thumb-container"
+                onClick={() => setPreviewModalImage(attachedImage)}
+                title="Clique para ampliar"
+              >
+                <img src={attachedImage} alt="Anexo" className="attached-thumb-img" />
+              </div>
+              <div className="attached-info">
+                <span className="attached-title">{attachedImageName || 'Imagem anexada'}</span>
+                <span className="attached-hint">Pronta para interpretação visual com Ollama</span>
+              </div>
+              <button
+                type="button"
+                className="btn-remove-attached"
+                onClick={() => {
+                  setAttachedImage(null);
+                  setAttachedImageName('');
+                }}
+                title="Remover anexo"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
           {skills.length > 0 && (
             <div className="skills-toolbar">
               <div
@@ -1504,6 +1692,22 @@ Estrutura recomendada para a resposta do Fórum:
           )}
 
           <div className="input-box">
+            <input
+              type="file"
+              ref={imageInputRef}
+              accept="image/png,image/jpeg,image/webp,image/gif,image/bmp"
+              onChange={handleImageFileSelect}
+              style={{ display: 'none' }}
+            />
+            <button
+              type="button"
+              className={`btn-attach-image ${attachedImage ? 'active' : ''}`}
+              onClick={() => imageInputRef.current?.click()}
+              title="Anexar imagem (ou cole com Cmd+V / arraste)"
+            >
+              <Paperclip size={15} />
+              {attachedImage && <span className="attach-dot" />}
+            </button>
             <button
               type="button"
               className={`btn-web-toggle ${webSearchEnabled ? 'active' : ''}`}
@@ -1521,7 +1725,9 @@ Estrutura recomendada para a resposta do Fórum:
             <input
               type="text"
               placeholder={
-                webSearchEnabled
+                attachedImage
+                  ? 'Faça uma pergunta sobre a imagem ou pressione Enviar para analisá-la...'
+                  : webSearchEnabled
                   ? `Pesquisar na Web e no acervo (${activeSubject})...`
                   : activeSubject === 'Geral'
                   ? 'Pergunte algo no acervo global de todos os tópicos...'
@@ -1529,9 +1735,14 @@ Estrutura recomendada para a resposta do Fórum:
               }
               value={input}
               onChange={(e) => setInput(e.target.value)}
+              onPaste={handleImagePaste}
               disabled={isLoading}
             />
-            <button type="submit" className="btn-send" disabled={isLoading || !input.trim()}>
+            <button
+              type="submit"
+              className="btn-send"
+              disabled={isLoading || (!input.trim() && !attachedImage)}
+            >
               {isLoading ? <span className="loader"></span> : 'Enviar'}
             </button>
           </div>
@@ -2367,6 +2578,26 @@ Estrutura recomendada para a resposta do Fórum:
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Multimodal Image Zoom Modal */}
+      {previewModalImage && (
+        <div
+          className="modal-overlay image-preview-modal-overlay"
+          onClick={() => setPreviewModalImage(null)}
+        >
+          <div className="image-preview-modal-content" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              className="btn-close-img-modal"
+              onClick={() => setPreviewModalImage(null)}
+              title="Fechar"
+            >
+              <X size={20} />
+            </button>
+            <img src={previewModalImage} alt="Imagem ampliada" className="image-preview-modal-img" />
           </div>
         </div>
       )}

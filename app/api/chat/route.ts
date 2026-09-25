@@ -11,6 +11,7 @@ import { DEFAULT_AGENTS } from '@/lib/agents/defaultAgents';
 import { CustomSkill } from '@/lib/skills/types';
 import { DEFAULT_SKILLS } from '@/lib/skills/defaultSkills';
 import { AVAILABLE_TOOLS, AvailableToolId } from '@/lib/tools/catalog';
+import { getBestAvailableVisionModel, streamOllamaVision } from '@/lib/tools/visionHelper';
 
 export type ChatSource = {
   id: string;
@@ -29,10 +30,26 @@ export type ChatSource = {
 export async function POST(req: NextRequest) {
   try {
     await ensureVectorIndex();
-    const { messages, materia, webSearch, agentId, skillId } = await req.json();
+    const { messages, materia, webSearch, agentId, skillId, image, images } = await req.json();
 
     if (!messages || messages.length === 0) {
       return NextResponse.json({ error: 'Nenhuma mensagem fornecida' }, { status: 400 });
+    }
+
+    const rawImages: string[] = [];
+    if (typeof image === 'string' && image.trim()) {
+      rawImages.push(image.trim());
+    }
+    if (Array.isArray(images)) {
+      for (const img of images) {
+        if (typeof img === 'string' && img.trim()) {
+          rawImages.push(img.trim());
+        }
+      }
+    }
+    const lastMsg = messages[messages.length - 1];
+    if (lastMsg?.image && typeof lastMsg.image === 'string' && !rawImages.includes(lastMsg.image)) {
+      rawImages.push(lastMsg.image);
     }
 
     const currentMessageContent = messages[messages.length - 1].content;
@@ -269,6 +286,83 @@ Responda EXCLUSIVAMENTE sobre o novo assunto solicitado. NUNCA misture nem respo
                 .map((t) => `• [${t.name} ${t.icon}]:\n${t.systemPromptInstruction.trim()}`)
                 .join('\n\n') +
               `\n=======================================================\n`;
+          }
+
+          // Roteamento Multimodal se houver imagem anexada
+          if (rawImages.length > 0) {
+            sendStatus('👁️ Localizando melhor modelo de visão instalado...');
+            const visionModel = await getBestAvailableVisionModel();
+            sendStatus(`👁️ Analisando imagem com modelo visual [${visionModel}]...`);
+
+            const visionSystemPrompt = `
+${agentPromptTemplate}
+
+${skillInstructionBlock}
+${toolsInstructionBlock}
+${technicalTermHint}
+${topicTransitionHint}
+
+CONSULTA TÉCNICA AO ESPECIALISTA DA MATÉRIA ("${consultMateria}"):
+Abaixo estão os trechos e fontes oficiais levantados pelo especialista no acervo documental:
+---
+${contextString}
+---
+
+DIRETRIZES DE EXECUÇÃO MULTIMODAL:
+- Analise detalhadamente a(s) imagem(ns) enviada(s) pelo usuário juntamente com a pergunta.
+- Se a imagem contiver texto, tabelas, código, diagramas ou fórmulas, faça a transcrição e interpretação precisa.
+- Assuma integralmente a sua persona, tom de voz e regras descritas no seu prompt acima.
+- Se uma SKILL especializada estiver ativada acima, siga RIGOROSAMENTE todas as diretrizes de formato, estrutura e regras da skill.
+- Se FERRAMENTAS (TOOLS) estiverem habilitadas acima, utilize-as quando o formato exigir (ex: blocos de código html para páginas, diagramas mermaid).
+- Utilize com rigor os dados fornecidos pelo especialista no acervo documental para fundamentar a resposta se relevante.
+- NUNCA invente informações não presentes na imagem ou nas fontes.
+- NUNCA inicie sua resposta com títulos como "Resposta:", "**Resposta:**", "Resposta" ou repetindo a pergunta. Comece diretamente com a sua resposta.
+`.trim();
+
+            try {
+              await streamOllamaVision({
+                model: visionModel,
+                systemPrompt: visionSystemPrompt,
+                userPrompt: currentMessageContent || 'Descreva e analise esta imagem detalhadamente.',
+                images: rawImages,
+                previousMessages: previousMessages.map((m: any) => ({ role: m.role, content: m.content })),
+                onToken: (chunk) => {
+                  controller.enqueue(
+                    encoder.encode(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`)
+                  );
+                },
+                onError: async (err) => {
+                  console.warn(`Vision model ${visionModel} failed, trying fallback to moondream:`, err);
+                  sendStatus('🔄 Alternando para modelo visual alternativo (moondream)...');
+                  try {
+                    await streamOllamaVision({
+                      model: 'moondream',
+                      systemPrompt: visionSystemPrompt,
+                      userPrompt: currentMessageContent || 'Descreva e analise esta imagem detalhadamente.',
+                      images: rawImages,
+                      onToken: (chunk) => {
+                        controller.enqueue(
+                          encoder.encode(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`)
+                        );
+                      },
+                    });
+                  } catch (fallbackErr: any) {
+                    controller.enqueue(
+                      encoder.encode(`event: token\ndata: ${JSON.stringify({ text: `\n\n⚠️ Não foi possível processar a imagem com os modelos de visão locais: ${fallbackErr.message}` })}\n\n`)
+                    );
+                  }
+                },
+              });
+            } catch (visionErr: any) {
+              console.error('Vision streaming error:', visionErr);
+              controller.enqueue(
+                encoder.encode(`event: token\ndata: ${JSON.stringify({ text: `\n\n⚠️ Erro ao analisar imagem: ${visionErr.message}` })}\n\n`)
+              );
+            }
+
+            controller.enqueue(encoder.encode(`event: done\ndata: {}\n\n`));
+            controller.close();
+            return;
           }
 
           const prompt = PromptTemplate.fromTemplate(`
