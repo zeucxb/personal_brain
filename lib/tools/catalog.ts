@@ -3,7 +3,8 @@ export type AvailableToolId =
   | 'tool_generate_pdf'
   | 'tool_generate_image'
   | 'tool_diagram'
-  | 'tool_web_search';
+  | 'tool_web_search'
+  | 'tool_edit_prompt';
 
 export type ToolDefinition = {
   id: AvailableToolId;
@@ -107,6 +108,32 @@ FERRAMENTA HABILITADA: DIAGRAMAS & MAPAS MENTAIS MERMAID (🧠)
     systemPromptInstruction: `
 FERRAMENTA HABILITADA: PESQUISA WEB EM TEMPO REAL (🔍)
 - Acesso a fontes de informação públicas da internet em tempo real como complemento aos documentos do acervo.
+`,
+  },
+  {
+    id: 'tool_edit_prompt',
+    name: 'Auto-Evolução de Agente / Skill (Prompt Tuning)',
+    icon: '✨',
+    description: 'Permite ao agente propor atualizações em seu próprio prompt de sistema, persona, tom de voz ou nas instruções da skill ativa via chat com aprovação do usuário.',
+    category: 'codigo',
+    systemPromptInstruction: `
+FERRAMENTA HABILITADA: AUTO-EVOLUÇÃO DE AGENTE E SKILL (✨)
+- Quando o usuário solicitar para você mudar suas regras, sua persona, seu tom de voz, editar seu prompt de sistema, alterar sua descrição, ou atualizar a skill ativa:
+1. Explique na sua resposta de forma amigável e clara o que você adaptou para atender ao pedido do usuário.
+2. Invoque esta ferramenta gerando OBRIGATORIAMENTE um bloco de código markdown delimitado por \`\`\`prompt-proposal contendo o seguinte JSON:
+\`\`\`prompt-proposal
+{
+  "target": "agent",
+  "id": "{current_agent_id}",
+  "name": "{current_agent_name}",
+  "description": "{nova descrição concisa}",
+  "systemPrompt": "{novo prompt de sistema completo e detalhado com as novas regras e persona incorporadas}",
+  "rationale": "{resumo de 1 a 2 frases explicando o que foi ajustado nesta proposta}"
+}
+\`\`\`
+- Se a solicitação do usuário for para atualizar a SKILL ATIVA, use "target": "skill", o id da skill ativa e o campo "systemPrompt" contendo as novas instruções da skill.
+- O sistema apresentará um Card Interativo e um Modal de Aprovação para o usuário revisar e aprovar a atualização com 1 clique.
+- REGRA CRÍTICA: No campo "systemPrompt", forneça o prompt COMPLETO e aprimorado (nunca corte com reticências). Mantenha as diretrizes pedagógicas fundamentais e incorpore as novas regras pedidas pelo usuário.
 `,
   },
 ];

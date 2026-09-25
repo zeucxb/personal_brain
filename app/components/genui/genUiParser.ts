@@ -247,3 +247,89 @@ export function parseInfographicFromMarkdown(text: string): InfographicData | nu
     conclusoes: conclusoes.slice(0, 4),
   };
 }
+
+export interface PromptProposal {
+  target: 'agent' | 'skill';
+  id?: string;
+  name?: string;
+  description?: string;
+  systemPrompt: string;
+  rationale?: string;
+}
+
+/**
+ * Extrai dados de Proposta de Alteração de Prompt/Skill do texto markdown
+ */
+export function parsePromptProposalFromMarkdown(text: string): PromptProposal | null {
+  if (!text) return null;
+
+  // 1. Procura por bloco delimitado: ```prompt-proposal, ```agent-proposal, ```tool-edit-prompt, etc.
+  const codeBlockMatch = text.match(/```(?:prompt-proposal|agent-proposal|tool-edit-prompt|tool_edit_prompt|json:prompt-update)\s*([\s\S]*?)```/i);
+  if (codeBlockMatch && codeBlockMatch[1]) {
+    try {
+      const data = JSON.parse(codeBlockMatch[1].trim());
+      if (data && (data.target === 'agent' || data.target === 'skill') && data.systemPrompt) {
+        return {
+          target: data.target,
+          id: data.id,
+          name: data.name,
+          description: data.description,
+          systemPrompt: data.systemPrompt,
+          rationale: data.rationale,
+        };
+      }
+    } catch (e) {
+      // JSON parse error, fallback
+    }
+  }
+
+  // 2. Procura em blocos ```json padrão que contenham target agent/skill e systemPrompt
+  const jsonMatches = Array.from(text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi));
+  for (const jm of jsonMatches) {
+    if (jm[1]) {
+      try {
+        const data = JSON.parse(jm[1].trim());
+        if (data && (data.target === 'agent' || data.target === 'skill') && data.systemPrompt) {
+          return {
+            target: data.target,
+            id: data.id,
+            name: data.name,
+            description: data.description,
+            systemPrompt: data.systemPrompt,
+            rationale: data.rationale,
+          };
+        }
+      } catch (e) {}
+    }
+  }
+
+  // 3. Procura por formato estruturado em Markdown:
+  const proposalHeaderMatch = text.match(/###\s*(?:🛠️\s*|✨\s*)?Proposta\s*de\s*(?:Atualiza[çc][ãa]o|Altera[çc][ãa]o)\s*(?:do\s*Agente|da\s*Skill)?/i);
+  if (proposalHeaderMatch) {
+    const section = text.slice(proposalHeaderMatch.index!);
+    const targetMatch = section.match(/\*\*(?:Alvo|Tipo|Target)\*\*:?\s*([^\n]+)/i);
+    const target = targetMatch && targetMatch[1].toLowerCase().includes('skill') ? 'skill' : 'agent';
+
+    const descMatch = section.match(/\*\*(?:Nova\s*Descri[çc][ãa]o|Descri[çc][ãa]o)\*\*:?\s*([^\n]+)/i);
+    const description = descMatch ? descMatch[1].trim() : undefined;
+
+    const ratMatch = section.match(/\*\*(?:Motivo|Rationale|Justificativa)\*\*:?\s*([^\n]+)/i);
+    const rationale = ratMatch ? ratMatch[1].trim() : undefined;
+
+    const promptMatch = section.match(/\*\*(?:Novo\s*Prompt|Prompt\s*de\s*Sistema|Instru[çc][õo]es)\*\*:?\s*```(?:markdown|text)?\s*([\s\S]*?)```/i) ||
+                        section.match(/\*\*(?:Novo\s*Prompt|Prompt\s*de\s*Sistema|Instru[çc][õo]es)\*\*:?\s*([^\n]+(?:\n[^\n]+)*)/i);
+    const systemPrompt = promptMatch ? promptMatch[1].trim() : '';
+
+    if (systemPrompt && systemPrompt.length > 20) {
+      return {
+        target,
+        description,
+        systemPrompt,
+        rationale,
+      };
+    }
+  }
+
+  return null;
+}
+

@@ -6,3 +6,4 @@ export * from './TableWidget';
 export * from './HtmlPreviewWidget';
 export * from './ImageViewerWidget';
 export * from './PdfExportButton';
+export * from './PromptProposalWidget';

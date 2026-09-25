@@ -109,6 +109,29 @@ export async function POST(req: NextRequest) {
     if (lowerMsg.includes('diagrama') || lowerMsg.includes('fluxograma') || lowerMsg.includes('mapa mental') || lowerMsg.includes('mindmap')) {
       activeToolIds.add('tool_diagram');
     }
+    if (
+      lowerMsg.includes('prompt') ||
+      lowerMsg.includes('persona') ||
+      lowerMsg.includes('descrição') ||
+      lowerMsg.includes('descricao') ||
+      lowerMsg.includes('instruç') ||
+      lowerMsg.includes('instruc') ||
+      lowerMsg.includes('regras') ||
+      lowerMsg.includes('comporte-se') ||
+      lowerMsg.includes('passe a responder') ||
+      lowerMsg.includes('mude o seu tom') ||
+      lowerMsg.includes('mude seu tom') ||
+      lowerMsg.includes('atualize a skill') ||
+      lowerMsg.includes('atualize sua skill') ||
+      lowerMsg.includes('edite a skill') ||
+      lowerMsg.includes('editar a skill') ||
+      lowerMsg.includes('atualize o agente') ||
+      lowerMsg.includes('edite o agente') ||
+      lowerMsg.includes('editar o agente') ||
+      lowerMsg.includes('auto-evolu')
+    ) {
+      activeToolIds.add('tool_edit_prompt');
+    }
 
     const activeToolDefs = AVAILABLE_TOOLS.filter((t) => activeToolIds.has(t.id));
 
@@ -283,7 +306,19 @@ Responda EXCLUSIVAMENTE sobre o novo assunto solicitado. NUNCA misture nem respo
             toolsInstructionBlock =
               `\n=======================================================\nFERRAMENTAS (TOOLS) HABILITADAS PARA USO:\n` +
               activeToolDefs
-                .map((t) => `• [${t.name} ${t.icon}]:\n${t.systemPromptInstruction.trim()}`)
+                .map((t) => {
+                  let instruction = t.systemPromptInstruction.trim();
+                  if (t.id === 'tool_edit_prompt') {
+                    instruction = instruction
+                      .replace(/{current_agent_id}/g, activeAgent.id)
+                      .replace(/{current_agent_name}/g, activeAgent.name);
+                    instruction += `\n[DADOS ATUAIS DO AGENTE ATIVO]:\n- ID: "${activeAgent.id}"\n- Nome: "${activeAgent.name}"\n- Descrição Atual: "${activeAgent.description || ''}"\n- Prompt Atual do Agente:\n"""\n${activeAgent.systemPrompt}\n"""\n`;
+                    if (activeSkill) {
+                      instruction += `\n[DADOS ATUAIS DA SKILL ATIVA]:\n- ID: "${activeSkill.id}"\n- Nome: "${activeSkill.name}"\n- Descrição Atual: "${activeSkill.description || ''}"\n- Instruções Atuais da Skill:\n"""\n${activeSkill.promptInstruction}\n"""\n`;
+                    }
+                  }
+                  return `• [${t.name} ${t.icon}]:\n${instruction}`;
+                })
                 .join('\n\n') +
               `\n=======================================================\n`;
           }

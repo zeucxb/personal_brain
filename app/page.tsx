@@ -37,9 +37,12 @@ import {
   parseFlashcardsFromMarkdown,
   parseQuizFromMarkdown,
   parseInfographicFromMarkdown,
+  parsePromptProposalFromMarkdown,
   FlashcardsWidget,
   QuizWidget,
   InfographicWidget,
+  PromptProposalWidget,
+  PromptProposal,
   TableWidget,
   HtmlPreviewWidget,
   ImageViewerWidget,
@@ -96,10 +99,28 @@ function AssistantMessage({
   content,
   sources,
   status,
+  currentAgentName,
+  currentSkillName,
+  currentAgentPrompt,
+  currentAgentDesc,
+  currentSkillPrompt,
+  currentSkillDesc,
+  onApproveProposal,
+  onRejectProposal,
+  onOpenProposalModal,
 }: {
   content: string;
   sources?: ChatSource[];
   status?: string;
+  currentAgentName?: string;
+  currentSkillName?: string;
+  currentAgentPrompt?: string;
+  currentAgentDesc?: string;
+  currentSkillPrompt?: string;
+  currentSkillDesc?: string;
+  onApproveProposal?: (proposal: PromptProposal) => Promise<boolean>;
+  onRejectProposal?: (proposal: PromptProposal) => void;
+  onOpenProposalModal?: (proposal: PromptProposal) => void;
 }) {
   const [selectedSource, setSelectedSource] = useState<ChatSource | null>(null);
   const [viewMode, setViewMode] = useState<'interactive' | 'text'>('interactive');
@@ -118,6 +139,19 @@ function AssistantMessage({
 
   const infographicData = useMemo(() => {
     return cleanContent ? parseInfographicFromMarkdown(cleanContent) : null;
+  }, [cleanContent]);
+
+  const fallbackProposal = useMemo(() => {
+    if (!cleanContent) return null;
+    const hasCodeBlockProposal =
+      cleanContent.includes('```prompt-proposal') ||
+      cleanContent.includes('```prompt_proposal') ||
+      cleanContent.includes('```agent-proposal') ||
+      cleanContent.includes('```tool-edit-prompt') ||
+      cleanContent.includes('```tool_edit_prompt') ||
+      cleanContent.includes('```json');
+    if (hasCodeBlockProposal) return null;
+    return parsePromptProposalFromMarkdown(cleanContent);
   }, [cleanContent]);
 
   const hasGenUi = Boolean(flashcards || quizQuestions || infographicData);
@@ -156,6 +190,52 @@ function AssistantMessage({
 
       if (lang === 'html') {
         return <HtmlPreviewWidget html={String(children).replace(/\n$/, '')} />;
+      }
+
+      if (
+        lang === 'prompt-proposal' ||
+        lang === 'prompt_proposal' ||
+        lang === 'agent-proposal' ||
+        lang === 'tool-edit-prompt' ||
+        lang === 'tool_edit_prompt'
+      ) {
+        try {
+          const data = JSON.parse(String(children));
+          return (
+            <PromptProposalWidget
+              proposal={data}
+              currentAgentName={currentAgentName}
+              currentSkillName={currentSkillName}
+              currentPrompt={data.target === 'skill' ? currentSkillPrompt : currentAgentPrompt}
+              currentDescription={data.target === 'skill' ? currentSkillDesc : currentAgentDesc}
+              onApprove={onApproveProposal}
+              onReject={onRejectProposal}
+              onOpenModal={onOpenProposalModal}
+            />
+          );
+        } catch (e) {
+          // fallback
+        }
+      }
+
+      if (lang === 'json') {
+        try {
+          const data = JSON.parse(String(children));
+          if (data && (data.target === 'agent' || data.target === 'skill') && data.systemPrompt) {
+            return (
+              <PromptProposalWidget
+                proposal={data}
+                currentAgentName={currentAgentName}
+                currentSkillName={currentSkillName}
+                currentPrompt={data.target === 'skill' ? currentSkillPrompt : currentAgentPrompt}
+                currentDescription={data.target === 'skill' ? currentSkillDesc : currentAgentDesc}
+                onApprove={onApproveProposal}
+                onReject={onRejectProposal}
+                onOpenModal={onOpenProposalModal}
+              />
+            );
+          }
+        } catch (e) {}
       }
 
       if (lang === 'genui-flashcards' || lang === 'genui_flashcards') {
@@ -326,6 +406,19 @@ function AssistantMessage({
             >
               {processedContent}
             </ReactMarkdown>
+          )}
+
+          {fallbackProposal && (
+            <PromptProposalWidget
+              proposal={fallbackProposal}
+              currentAgentName={currentAgentName}
+              currentSkillName={currentSkillName}
+              currentPrompt={fallbackProposal.target === 'skill' ? currentSkillPrompt : currentAgentPrompt}
+              currentDescription={fallbackProposal.target === 'skill' ? currentSkillDesc : currentAgentDesc}
+              onApprove={onApproveProposal}
+              onReject={onRejectProposal}
+              onOpenModal={onOpenProposalModal}
+            />
           )}
 
           {cleanContent && (
@@ -672,6 +765,11 @@ export default function ChatApp() {
 
   const currentMessages = activeConversation ? activeConversation.messages : [];
   const currentAgent = agents.find((a) => a.id === activeAgentId) || agents[0] || null;
+  const currentSkill = skills.find((s) => s.id === activeSkillId) || null;
+
+  // Prompt Proposal Modal State
+  const [proposalModal, setProposalModal] = useState<PromptProposal | null>(null);
+  const [isModalApproving, setIsModalApproving] = useState(false);
 
   const handleCreateNewConversation = () => {
     const newId = `c_${Date.now()}`;
@@ -916,6 +1014,120 @@ Estrutura recomendada para a resposta do Fórum:
     }
   };
 
+  const handleApproveProposal = async (proposal: PromptProposal): Promise<boolean> => {
+    try {
+      if (proposal.target === 'skill') {
+        const targetSkill =
+          skills.find((s) => s.id === proposal.id || s.name.toLowerCase() === proposal.name?.toLowerCase()) ||
+          skills.find((s) => s.id === activeSkillId);
+
+        if (!targetSkill) {
+          alert('Skill alvo não encontrada para atualização.');
+          return false;
+        }
+
+        const updateBody: any = {
+          id: targetSkill.id,
+          promptInstruction: proposal.systemPrompt.trim(),
+        };
+        if (proposal.description) {
+          updateBody.description = proposal.description.trim();
+        }
+        if (proposal.name) {
+          updateBody.name = proposal.name.trim();
+        }
+
+        const res = await fetch('/api/skills', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updateBody),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          alert(`Erro ao atualizar skill: ${errData.error || 'Falha na requisição'}`);
+          return false;
+        }
+
+        await fetchSkills();
+        setSkills((prev) =>
+          prev.map((s) =>
+            s.id === targetSkill.id
+              ? {
+                  ...s,
+                  ...(proposal.name ? { name: proposal.name.trim() } : {}),
+                  ...(proposal.description ? { description: proposal.description.trim() } : {}),
+                  promptInstruction: proposal.systemPrompt.trim(),
+                  updatedAt: Date.now(),
+                }
+              : s
+          )
+        );
+        return true;
+      } else {
+        // Target === 'agent'
+        const targetAgent =
+          agents.find((a) => a.id === proposal.id || a.name.toLowerCase() === proposal.name?.toLowerCase()) ||
+          agents.find((a) => a.id === activeAgentId) ||
+          agents[0];
+
+        if (!targetAgent) {
+          alert('Agente alvo não encontrado para atualização.');
+          return false;
+        }
+
+        const updateBody: any = {
+          id: targetAgent.id,
+          systemPrompt: proposal.systemPrompt.trim(),
+        };
+        if (proposal.description) {
+          updateBody.description = proposal.description.trim();
+        }
+        if (proposal.name) {
+          updateBody.name = proposal.name.trim();
+        }
+
+        const res = await fetch('/api/agents', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updateBody),
+        });
+
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          alert(`Erro ao atualizar agente: ${errData.error || 'Falha na requisição'}`);
+          return false;
+        }
+
+        await fetchAgents();
+        setAgents((prev) =>
+          prev.map((a) =>
+            a.id === targetAgent.id
+              ? {
+                  ...a,
+                  ...(proposal.name ? { name: proposal.name.trim() } : {}),
+                  ...(proposal.description ? { description: proposal.description.trim() } : {}),
+                  systemPrompt: proposal.systemPrompt.trim(),
+                  updatedAt: Date.now(),
+                }
+              : a
+          )
+        );
+        return true;
+      }
+    } catch (e: any) {
+      console.error('Error approving proposal:', e);
+      alert(`Falha ao aplicar alteração: ${e.message}`);
+      return false;
+    }
+  };
+
+  const handleRejectProposal = (proposal: PromptProposal) => {
+    if (proposalModal) {
+      setProposalModal(null);
+    }
+  };
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     const trimmed = input.trim();
@@ -1064,6 +1276,12 @@ Estrutura recomendada para a resposta do Fórum:
         updatedAt: Date.now(),
       };
       saveConversationToDb(finalConv);
+
+      // Auto-detect prompt proposal and trigger review modal if present
+      const detectedProposal = parsePromptProposalFromMarkdown(finalCleanedText);
+      if (detectedProposal) {
+        setProposalModal(detectedProposal);
+      }
     } catch (error) {
       console.error('Error in chat:', error);
     } finally {
@@ -1594,6 +1812,15 @@ Estrutura recomendada para a resposta do Fórum:
                     content={msg.content}
                     sources={msg.sources}
                     status={isLoading && idx === currentMessages.length - 1 ? subagentStatus : undefined}
+                    currentAgentName={currentAgent?.name}
+                    currentSkillName={currentSkill?.name}
+                    currentAgentPrompt={currentAgent?.systemPrompt}
+                    currentAgentDesc={currentAgent?.description}
+                    currentSkillPrompt={currentSkill?.promptInstruction}
+                    currentSkillDesc={currentSkill?.description}
+                    onApproveProposal={handleApproveProposal}
+                    onRejectProposal={handleRejectProposal}
+                    onOpenProposalModal={(prop) => setProposalModal(prop)}
                   />
                 ) : (
                   <div className="user-message-container">
@@ -2647,6 +2874,121 @@ Estrutura recomendada para a resposta do Fórum:
               <X size={20} />
             </button>
             <img src={previewModalImage} alt="Imagem ampliada" className="image-preview-modal-img" />
+          </div>
+        </div>
+      )}
+
+      {/* Proposal Approval Modal */}
+      {proposalModal && (
+        <div
+          className="modal-overlay"
+          onClick={() => !isModalApproving && setProposalModal(null)}
+        >
+          <div
+            className="modal modal-proposal-approval"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="proposal-modal-header">
+              <div className="flex items-center gap-2">
+                <Sparkles size={20} className="text-amber-400" />
+                <h3 style={{ margin: 0 }}>
+                  Aprovação de Alteração:{' '}
+                  <span className="text-amber-300">
+                    {proposalModal.name ||
+                      (proposalModal.target === 'skill'
+                        ? currentSkill?.name || 'Skill'
+                        : currentAgent?.name || 'Agente')}
+                  </span>
+                </h3>
+              </div>
+              <button
+                type="button"
+                className="btn-close-modal"
+                onClick={() => !isModalApproving && setProposalModal(null)}
+                style={{ background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="proposal-modal-body">
+              <div className="proposal-modal-banner">
+                <div className="banner-icon">
+                  {proposalModal.target === 'skill' ? <Zap size={16} /> : <Bot size={16} />}
+                </div>
+                <div>
+                  <div className="banner-title">
+                    O assistente sugeriu atualizar{' '}
+                    {proposalModal.target === 'skill' ? 'as instruções da Skill' : 'o prompt do Agente'}
+                  </div>
+                  <div className="banner-desc">
+                    Revise as modificações propostas abaixo. Se aprovar, as novas diretrizes serão salvas
+                    no MongoDB e incorporadas imediatamente ao comportamento do assistente.
+                  </div>
+                </div>
+              </div>
+
+              {proposalModal.rationale && (
+                <div className="proposal-rationale-box">
+                  <strong>💡 Motivo da Proposta:</strong> {proposalModal.rationale}
+                </div>
+              )}
+
+              {proposalModal.description && (
+                <div className="proposal-diff-section">
+                  <div className="diff-section-label">Nova Descrição Proposta:</div>
+                  <div className="proposal-diff-text">{proposalModal.description}</div>
+                </div>
+              )}
+
+              <div className="proposal-diff-section">
+                <div className="diff-section-label">
+                  Novo Prompt de Sistema Proposto ({proposalModal.systemPrompt?.length || 0} caracteres):
+                </div>
+                <div className="proposal-modal-code-wrapper">
+                  <pre className="proposal-modal-code">{proposalModal.systemPrompt}</pre>
+                </div>
+              </div>
+            </div>
+
+            <div className="modal-actions" style={{ marginTop: '1.25rem' }}>
+              <button
+                type="button"
+                className="btn-cancel"
+                onClick={() => setProposalModal(null)}
+                disabled={isModalApproving}
+              >
+                Descartar
+              </button>
+              <button
+                type="button"
+                className="btn-submit btn-approve-modal"
+                disabled={isModalApproving}
+                onClick={async () => {
+                  setIsModalApproving(true);
+                  try {
+                    const ok = await handleApproveProposal(proposalModal);
+                    if (ok) {
+                      setProposalModal(null);
+                    }
+                  } finally {
+                    setIsModalApproving(false);
+                  }
+                }}
+              >
+                {isModalApproving ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    <span>Aplicando...</span>
+                  </>
+                ) : (
+                  <>
+                    <CheckCircle2 size={16} />
+                    <span>Aprovar e Aplicar Agora</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}

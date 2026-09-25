@@ -4344,5 +4344,445 @@ body > div[id^="dmermaid_"] {
   transform: scale(1.1);
 }
 
+/* =========================================================
+   GENUI: PROMPT & SKILL EVOLUTION PROPOSAL WIDGET & MODAL
+   ========================================================= */
 
+.prompt-proposal-card {
+  margin: 1.25rem 0;
+  border-radius: 0.85rem;
+  background: linear-gradient(135deg, rgba(30, 41, 59, 0.95), rgba(15, 23, 42, 0.98));
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.5), 0 0 20px rgba(245, 158, 11, 0.1);
+  padding: 1.2rem;
+  transition: all 0.25s ease;
+  overflow: hidden;
+}
 
+.prompt-proposal-card.pending {
+  border-color: rgba(245, 158, 11, 0.45);
+}
+
+.prompt-proposal-card.approved {
+  border-color: rgba(34, 197, 94, 0.5);
+  background: linear-gradient(135deg, rgba(20, 40, 30, 0.95), rgba(15, 23, 42, 0.98));
+  box-shadow: 0 8px 24px -4px rgba(0, 0, 0, 0.5), 0 0 20px rgba(34, 197, 94, 0.12);
+}
+
+.prompt-proposal-card.rejected {
+  border-color: rgba(148, 163, 184, 0.25);
+  opacity: 0.75;
+}
+
+.proposal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-wrap: wrap;
+}
+
+.proposal-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.proposal-icon-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 0.6rem;
+  background: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.proposal-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #f8fafc;
+}
+
+.proposal-title strong {
+  color: #fbbf24;
+}
+
+.proposal-subtitle {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: #94a3b8;
+  margin-top: 0.15rem;
+}
+
+.proposal-status-badge {
+  display: flex;
+  align-items: center;
+}
+
+.status-pill {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.65rem;
+  border-radius: 9999px;
+  letter-spacing: 0.02em;
+}
+
+.status-pill.pending {
+  background: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.status-pill.approved {
+  background: rgba(34, 197, 94, 0.18);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.35);
+}
+
+.status-pill.rejected {
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+}
+
+.proposal-rationale {
+  margin-top: 0.85rem;
+  padding: 0.65rem 0.85rem;
+  background: rgba(245, 158, 11, 0.08);
+  border-left: 3px solid #f59e0b;
+  border-radius: 0.4rem;
+  font-size: 0.82rem;
+  color: #fde68a;
+  line-height: 1.45;
+}
+
+.proposal-field-preview {
+  margin-top: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 0.4rem;
+  font-size: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.field-label {
+  font-weight: 600;
+  color: #94a3b8;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.field-value {
+  color: #e2e8f0;
+}
+
+.proposal-prompt-box {
+  margin-top: 0.85rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+
+.prompt-box-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.55rem 0.85rem;
+  background: rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  user-select: none;
+}
+
+.prompt-box-title {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.btn-toggle-expand {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  padding: 0.15rem;
+}
+
+.prompt-box-content {
+  padding: 0.65rem 0.85rem;
+  font-size: 0.8rem;
+}
+
+.prompt-box-content.collapsed {
+  cursor: pointer;
+  position: relative;
+}
+
+.prompt-box-content.expanded {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.prompt-pre {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: #e2e8f0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.click-to-expand {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.72rem;
+  color: #a855f7;
+  font-weight: 500;
+}
+
+.proposal-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  margin-top: 1rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  flex-wrap: wrap;
+}
+
+.btn-approve-proposal {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 1rem;
+  background: linear-gradient(135deg, #16a34a, #15803d);
+  color: #ffffff;
+  border: 1px solid rgba(34, 197, 94, 0.4);
+  border-radius: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 4px 12px rgba(22, 163, 74, 0.25);
+}
+
+.btn-approve-proposal:hover:not(:disabled) {
+  background: linear-gradient(135deg, #22c55e, #16a34a);
+  box-shadow: 0 6px 16px rgba(34, 197, 94, 0.35);
+  transform: translateY(-1px);
+}
+
+.btn-approve-proposal:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-review-modal {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.9rem;
+  background: rgba(147, 51, 234, 0.15);
+  color: #d8b4fe;
+  border: 1px solid rgba(168, 85, 247, 0.35);
+  border-radius: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-review-modal:hover {
+  background: rgba(147, 51, 234, 0.25);
+  color: #ffffff;
+  border-color: rgba(168, 85, 247, 0.5);
+}
+
+.btn-reject-proposal {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.55rem 0.85rem;
+  background: rgba(255, 255, 255, 0.05);
+  color: #94a3b8;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  font-size: 0.82rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-reject-proposal:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.35);
+}
+
+.btn-reject-proposal:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.proposal-feedback {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.82rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.4rem;
+  width: 100%;
+}
+
+.proposal-feedback.success {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.proposal-feedback.neutral {
+  background: rgba(148, 163, 184, 0.1);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+/* Modal Proposal Approval */
+.modal-proposal-approval {
+  max-width: 740px;
+  width: 92vw;
+  background: #0f172a;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.75), 0 0 35px rgba(245, 158, 11, 0.12);
+}
+
+.proposal-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.proposal-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: 65vh;
+  overflow-y: auto;
+  padding-right: 0.4rem;
+}
+
+.proposal-modal-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.85rem;
+  padding: 0.85rem 1rem;
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(147, 51, 234, 0.08));
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  border-radius: 0.6rem;
+}
+
+.banner-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 0.45rem;
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  flex-shrink: 0;
+}
+
+.banner-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: #fef3c7;
+}
+
+.banner-desc {
+  font-size: 0.76rem;
+  color: #cbd5e1;
+  margin-top: 0.2rem;
+  line-height: 1.4;
+}
+
+.proposal-rationale-box {
+  padding: 0.75rem 0.95rem;
+  background: rgba(147, 51, 234, 0.12);
+  border: 1px solid rgba(168, 85, 247, 0.25);
+  border-radius: 0.5rem;
+  font-size: 0.82rem;
+  color: #f3e8ff;
+  line-height: 1.45;
+}
+
+.proposal-diff-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.diff-section-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #94a3b8;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.proposal-diff-text {
+  padding: 0.65rem 0.85rem;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 0.45rem;
+  font-size: 0.83rem;
+  color: #f1f5f9;
+}
+
+.proposal-modal-code-wrapper {
+  background: rgba(0, 0, 0, 0.45);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.5rem;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 0.85rem;
+}
+
+.proposal-modal-code {
+  margin: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  color: #e2e8f0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.btn-approve-modal {
+  background: linear-gradient(135deg, #16a34a, #15803d) !important;
+  border-color: rgba(34, 197, 94, 0.5) !important;
+  box-shadow: 0 4px 15px rgba(22, 163, 74, 0.35) !important;
+  color: #ffffff !important;
+}
+
+.btn-approve-modal:hover:not(:disabled) {
+  background: linear-gradient(135deg, #22c55e, #16a34a) !important;
+  transform: translateY(-1px);
+}
