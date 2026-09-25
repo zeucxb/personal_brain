@@ -257,6 +257,44 @@ export interface PromptProposal {
   rationale?: string;
 }
 
+function safeParseProposalJson(rawJson: string): any {
+  if (!rawJson) return null;
+  const clean = rawJson.trim();
+  try {
+    return JSON.parse(clean);
+  } catch (e) {
+    // 1. Tenta consertar quebras de linha literais dentro de strings
+    try {
+      const sanitized = clean.replace(/"systemPrompt"\s*:\s*"([\s\S]*?)"(?=\s*,\s*"[a-zA-Z]+"|\s*})/g, (m, p1) => {
+        return `"systemPrompt": ${JSON.stringify(p1)}`;
+      });
+      return JSON.parse(sanitized);
+    } catch (e2) {}
+
+    // 2. Extração via Regex campo a campo caso o JSON esteja com caracteres de controle
+    try {
+      const targetMatch = clean.match(/"target"\s*:\s*"([^"]+)"/);
+      const nameMatch = clean.match(/"name"\s*:\s*"([^"]+)"/);
+      const idMatch = clean.match(/"id"\s*:\s*"([^"]+)"/);
+      const descMatch = clean.match(/"description"\s*:\s*"([^"]+)"/);
+      const rationaleMatch = clean.match(/"rationale"\s*:\s*"([^"]+)"/);
+
+      const promptMatch = clean.match(/"systemPrompt"\s*:\s*"([\s\S]*?)"(?=\s*,\s*"[a-zA-Z]+"|\s*})/);
+      if (promptMatch && promptMatch[1]) {
+        return {
+          target: targetMatch ? targetMatch[1] : 'agent',
+          id: idMatch ? idMatch[1] : undefined,
+          name: nameMatch ? nameMatch[1] : undefined,
+          description: descMatch ? descMatch[1] : undefined,
+          systemPrompt: promptMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"'),
+          rationale: rationaleMatch ? rationaleMatch[1] : undefined,
+        };
+      }
+    } catch (e3) {}
+    return null;
+  }
+}
+
 /**
  * Extrai dados de Proposta de Alteração de Prompt/Skill do texto markdown
  */
@@ -266,8 +304,24 @@ export function parsePromptProposalFromMarkdown(text: string): PromptProposal | 
   // 1. Procura por bloco delimitado: ```prompt-proposal, ```agent-proposal, ```tool-edit-prompt, etc.
   const codeBlockMatch = text.match(/```(?:prompt-proposal|agent-proposal|tool-edit-prompt|tool_edit_prompt|json:prompt-update)\s*([\s\S]*?)```/i);
   if (codeBlockMatch && codeBlockMatch[1]) {
-    try {
-      const data = JSON.parse(codeBlockMatch[1].trim());
+    const data = safeParseProposalJson(codeBlockMatch[1]);
+    if (data && (data.target === 'agent' || data.target === 'skill') && data.systemPrompt) {
+      return {
+        target: data.target,
+        id: data.id,
+        name: data.name,
+        description: data.description,
+        systemPrompt: data.systemPrompt,
+        rationale: data.rationale,
+      };
+    }
+  }
+
+  // 2. Procura em blocos ```json padrão que contenham target agent/skill e systemPrompt
+  const jsonMatches = Array.from(text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi));
+  for (const jm of jsonMatches) {
+    if (jm[1]) {
+      const data = safeParseProposalJson(jm[1]);
       if (data && (data.target === 'agent' || data.target === 'skill') && data.systemPrompt) {
         return {
           target: data.target,
@@ -278,28 +332,6 @@ export function parsePromptProposalFromMarkdown(text: string): PromptProposal | 
           rationale: data.rationale,
         };
       }
-    } catch (e) {
-      // JSON parse error, fallback
-    }
-  }
-
-  // 2. Procura em blocos ```json padrão que contenham target agent/skill e systemPrompt
-  const jsonMatches = Array.from(text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi));
-  for (const jm of jsonMatches) {
-    if (jm[1]) {
-      try {
-        const data = JSON.parse(jm[1].trim());
-        if (data && (data.target === 'agent' || data.target === 'skill') && data.systemPrompt) {
-          return {
-            target: data.target,
-            id: data.id,
-            name: data.name,
-            description: data.description,
-            systemPrompt: data.systemPrompt,
-            rationale: data.rationale,
-          };
-        }
-      } catch (e) {}
     }
   }
 
@@ -330,6 +362,22 @@ export function parsePromptProposalFromMarkdown(text: string): PromptProposal | 
     }
   }
 
+  // 4. Reconhece saída em texto livre do tipo "Prompt melhorado:\n\n<prompt>"
+  const promptMelhoradoMatch = text.match(
+    /(?:Prompt\s+melhorado|Novo\s+prompt(?:\s+do\s+agente)?|Prompt\s+atualizado|Sugest[ãa]o\s+de\s+prompt)[:\s]*\n+([\s\S]*?)(?=\n\n(?:\*\*?Objetivos|\*\*?Estrutura|\*\*?Especificar|Espero\s+que)|$)/i
+  );
+  if (promptMelhoradoMatch && promptMelhoradoMatch[1]) {
+    const candidatePrompt = promptMelhoradoMatch[1].trim();
+    if (candidatePrompt.length > 25) {
+      return {
+        target: 'agent',
+        systemPrompt: candidatePrompt,
+        rationale: 'Aprimoramento do prompt conforme solicitado no chat',
+      };
+    }
+  }
+
   return null;
 }
+
 

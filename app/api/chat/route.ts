@@ -27,6 +27,32 @@ export type ChatSource = {
   evalMotivo?: string;
 };
 
+function detectEditPromptIntent(msg: string): boolean {
+  if (!msg) return false;
+  const lower = msg.toLowerCase().trim();
+
+  // Se for apenas uma dúvida geral sobre o que é um prompt ou como funciona conceitualmente, não é edição do agente
+  if (lower.startsWith('o que é prompt') || lower.startsWith('o que e prompt') || lower.startsWith('como funciona o prompt')) {
+    return false;
+  }
+
+  const patterns = [
+    // Verbos de ação + prompt / persona / regras / instruções / diretrizes
+    /(?:melhor(?:a|e|ar)|mud(?:a|e|ar)|alter(?:a|e|ar)|edit(?:a|e|ar)|atualiz(?:a|e|ar)|ajust(?:a|e|ar)|troc(?:a|e|ar)|redefin(?:a|e|ir)|otimiz(?:a|e|ar))\s+(?:o\s+|a\s+|seu\s+|sua\s+|os\s+|as\s+)?(?:prompt|persona|instru[çc][õo]es|regras|comportamento|tom\s+de\s+voz|diretrizes)/i,
+    // "prompt do agente", "regras da skill", etc.
+    /(?:prompt|persona|instru[çc][õo]es|regras|diretrizes)\s+(?:d[oe]\s+|para\s+o\s+)?(?:agent[ea]|skill|assistente|sistema)/i,
+    // "adicione ao seu prompt", "inclua nas suas regras", etc.
+    /(?:adicion(?:a|e|ar)|inclu(?:a|i|ir)|salv(?:a|e|ar)|incorpor(?:a|e|ar)|coloqu(?:e|a|ar))\s+(?:ao|na|no|nas|nos)\s+(?:seu\s+|sua\s+)?(?:prompt|persona|regras|instru[çc][õo]es|diretrizes)/i,
+    // "passe a responder", "mude o seu tom"
+    /(?:pass(?:e|a|ar)\s+a\s+responder|comport(?:e|a|ar)-se|aja\s+como|mude\s+(?:o\s+)?(?:seu\s+)?tom)/i,
+    // "atualize o agente", "edite a skill", etc.
+    /(?:atualiz(?:a|e|ar)|edit(?:a|e|ar)|melhor(?:a|e|ar)|modific(?:a|e|ar))\s+(?:o\s+|a\s+)?(?:agente|skill)/i,
+    /auto-evolu[çc][ãa]o/i,
+  ];
+
+  return patterns.some((p) => p.test(lower));
+}
+
 export async function POST(req: NextRequest) {
   try {
     await ensureVectorIndex();
@@ -109,27 +135,8 @@ export async function POST(req: NextRequest) {
     if (lowerMsg.includes('diagrama') || lowerMsg.includes('fluxograma') || lowerMsg.includes('mapa mental') || lowerMsg.includes('mindmap')) {
       activeToolIds.add('tool_diagram');
     }
-    if (
-      lowerMsg.includes('prompt') ||
-      lowerMsg.includes('persona') ||
-      lowerMsg.includes('descrição') ||
-      lowerMsg.includes('descricao') ||
-      lowerMsg.includes('instruç') ||
-      lowerMsg.includes('instruc') ||
-      lowerMsg.includes('regras') ||
-      lowerMsg.includes('comporte-se') ||
-      lowerMsg.includes('passe a responder') ||
-      lowerMsg.includes('mude o seu tom') ||
-      lowerMsg.includes('mude seu tom') ||
-      lowerMsg.includes('atualize a skill') ||
-      lowerMsg.includes('atualize sua skill') ||
-      lowerMsg.includes('edite a skill') ||
-      lowerMsg.includes('editar a skill') ||
-      lowerMsg.includes('atualize o agente') ||
-      lowerMsg.includes('edite o agente') ||
-      lowerMsg.includes('editar o agente') ||
-      lowerMsg.includes('auto-evolu')
-    ) {
+    const isEditPromptIntent = detectEditPromptIntent(currentMessageContent);
+    if (isEditPromptIntent) {
       activeToolIds.add('tool_edit_prompt');
     }
 
@@ -162,6 +169,88 @@ export async function POST(req: NextRequest) {
           if (activeToolDefs.length > 0) {
             const toolBadges = activeToolDefs.map((t) => `${t.icon} ${t.name}`).join(' • ');
             sendStatus(`🛠️ [Tools Ativadas] ${toolBadges}`);
+          }
+
+          // Se for intenção explícita de Auto-Evolução / edição de prompt, executa branch dedicada sem poluição de RAG
+          if (isEditPromptIntent) {
+            sendStatus('✨ [Auto-Evolução] Analisando regras atuais e gerando proposta para aprovação...');
+
+            // Limpa fontes no cliente para evitar poluição visual de acervo documental
+            controller.enqueue(
+              encoder.encode(`event: sources\ndata: ${JSON.stringify([])}\n\n`)
+            );
+
+            const recentHistory = previousMessages.slice(-8);
+            const chatHistoryBlock =
+              recentHistory.length > 0
+                ? `HISTÓRICO RECENTE DA CONVERSA:\n` +
+                  recentHistory
+                    .map((m: any) => `${m.role === 'user' ? 'Usuário' : 'Assistente'}: ${m.content}`)
+                    .join('\n\n') +
+                  '\n\n---\n'
+                : '';
+
+            const targetType = lowerMsg.includes('skill') && activeSkill ? 'skill' : 'agent';
+            const targetName = targetType === 'skill' ? activeSkill!.name : activeAgent.name;
+            const targetId = targetType === 'skill' ? activeSkill!.id : activeAgent.id;
+            const currentPrompt = targetType === 'skill' ? activeSkill!.promptInstruction : activeAgent.systemPrompt;
+            const currentDesc = (targetType === 'skill' ? activeSkill!.description : activeAgent.description) || '';
+
+            const evolutionPrompt = `
+Você é uma inteligência artificial especialista em ENGENHARIA DE PROMPTS e AUTO-EVOLUÇÃO DE AGENTES.
+O usuário está conversando com você com o objetivo explícito de AJUSTAR, MELHORAR ou ATUALIZAR as diretrizes do seu próprio sistema (${targetType === 'skill' ? 'da Skill' : 'do Agente'} "${targetName}").
+
+DADOS ATUAIS (${targetType === 'skill' ? 'DA SKILL' : 'DO AGENTE'} "${targetName}"):
+- ID: "${targetId}"
+- Nome: "${targetName}"
+- Descrição Atual: "${currentDesc}"
+- Prompt de Sistema Atual:
+"""
+${currentPrompt}
+"""
+
+${chatHistoryBlock}
+
+SOLICITAÇÃO DO USUÁRIO:
+"${currentMessageContent}"
+
+SUA MISSÃO OBRIGATÓRIA:
+1. Responda em português com 1 ou 2 parágrafos amigáveis e explicativos explicando detalhadamente o que você ajustou e aprimorou no prompt do ${targetType === 'skill' ? 'da skill' : 'do agente'} para atender ao pedido do usuário (por exemplo: adicionando regras contra redundâncias, garantindo escrita fluida e natural, definindo tom de voz, removendo seções burocráticas, etc.).
+2. Em seguida, você DEVE OBRIGATORIAMENTE gerar um bloco de código markdown no formato exato \`\`\`prompt-proposal contendo o seguinte JSON:
+
+\`\`\`prompt-proposal
+{
+  "target": "${targetType}",
+  "id": "${targetId}",
+  "name": "${targetName}",
+  "description": "${currentDesc}",
+  "systemPrompt": "<coloque aqui o prompt de sistema COMPLETO, combinando o prompt original com as novas diretrizes solicitadas pelo usuário>",
+  "rationale": "<resumo conciso de 1 frase do que foi adicionado ou modificado nesta proposta>"
+}
+\`\`\`
+
+REGRAS CRÍTICAS:
+- O bloco de código DEVE usar a tag \`\`\`prompt-proposal no início e fechar com \`\`\`.
+- O campo "systemPrompt" NUNCA deve conter reticências (...) nem ser resumido. Ele deve ser o prompt COMPLETO pronto para ser executado e salvo no banco de dados.
+- Mantenha toda a boa estrutura do prompt original e integre cirurgicamente as novas orientações pedidas pelo usuário.
+- NÃO dê apenas dicas soltas em texto. Você DEVE obrigatoriamente gerar o bloco \`\`\`prompt-proposal para acionar o modal de aprovação na tela do usuário.
+`.trim();
+
+            const llm = new Ollama({
+              model: 'llama3',
+              baseUrl: 'http://localhost:11434',
+            });
+
+            const stream = await llm.stream(evolutionPrompt);
+            for await (const chunk of stream) {
+              controller.enqueue(
+                encoder.encode(`event: token\ndata: ${JSON.stringify({ text: chunk })}\n\n`)
+              );
+            }
+
+            controller.enqueue(encoder.encode(`event: done\ndata: {}\n\n`));
+            controller.close();
+            return;
           }
 
           if (consultMateria !== 'Geral') {
