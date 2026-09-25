@@ -1,4 +1,5 @@
 export type AvailableToolId =
+  | 'tool_knowledge_search'
   | 'tool_html_preview'
   | 'tool_generate_pdf'
   | 'tool_generate_image'
@@ -16,6 +17,18 @@ export type ToolDefinition = {
 };
 
 export const AVAILABLE_TOOLS: ToolDefinition[] = [
+  {
+    id: 'tool_knowledge_search',
+    name: 'Consultar Acervo de Documentos (RAG)',
+    icon: '📚',
+    description: 'Consulta o acervo de apostilas, livros e documentos indexados no banco de dados para responder dúvidas específicas sobre as matérias cadastradas.',
+    category: 'documento',
+    systemPromptInstruction: `
+FERRAMENTA HABILITADA: CONSULTA AO ACERVO DE DOCUMENTOS (📚)
+- Use esta ferramenta quando a solicitação do usuário demandar dados factuais, leis, regulamentos, manuais técnicos ou conceitos constantes nas apostilas da matéria selecionada.
+- Se a mensagem for um cumprimento casual, pergunta de conhecimento geral, lógica pura, código genérico ou ajuste interno, responda diretamente sem necessidade de fundamentação no acervo.
+`,
+  },
   {
     id: 'tool_html_preview',
     name: 'Gerador de HTML / Web UI Interativa',
@@ -137,3 +150,6 @@ FERRAMENTA HABILITADA: AUTO-EVOLUÇÃO DE AGENTE E SKILL (✨)
 `,
   },
 ];
+
+export { OLLAMA_TOOL_DEFINITIONS, decideKnowledgeSearchNeed } from './agenticRag';
+

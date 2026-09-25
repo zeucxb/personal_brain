@@ -5,12 +5,12 @@ import { PromptTemplate } from '@langchain/core/prompts';
 import { StringOutputParser } from '@langchain/core/output_parsers';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { searchWeb, detectWebSearchIntent } from '@/lib/tools/webSearch';
-import { runIntelligentRAG } from '@/lib/rag/subagent';
+import { runIntelligentRAG, EvaluatedChunk } from '@/lib/rag/subagent';
 import { CustomAgent } from '@/lib/agents/types';
 import { DEFAULT_AGENTS } from '@/lib/agents/defaultAgents';
 import { CustomSkill } from '@/lib/skills/types';
 import { DEFAULT_SKILLS } from '@/lib/skills/defaultSkills';
-import { AVAILABLE_TOOLS, AvailableToolId } from '@/lib/tools/catalog';
+import { AVAILABLE_TOOLS, AvailableToolId, decideKnowledgeSearchNeed } from '@/lib/tools/catalog';
 import { getBestAvailableVisionModel, streamOllamaVision } from '@/lib/tools/visionHelper';
 
 export type ChatSource = {
@@ -253,21 +253,37 @@ REGRAS CRÍTICAS:
             return;
           }
 
-          if (consultMateria !== 'Geral') {
-            sendStatus(`🔍 [${activeAgent?.name || 'Agente'}] Consultando especialista na matéria "${consultMateria}" como ferramenta...`);
+          // 2. Decisão de uso da Tool de RAG pelo Agente (Agentic RAG)
+          sendStatus(`🤔 [${activeAgent?.name || 'Agente'}] Avaliando contexto para acionar ferramentas necessárias...`);
+          const ragDecision = await decideKnowledgeSearchNeed({
+            userMessage: currentMessageContent,
+            materia: consultMateria,
+            model: process.env.OLLAMA_MODEL || 'llama3',
+          });
+
+          let relevantDocs: EvaluatedChunk[] = [];
+          let ragExpansion: any = null;
+
+          if (ragDecision.needsSearch) {
+            if (consultMateria !== 'Geral') {
+              sendStatus(`📚 [Tool: Consultar Acervo] Acionando busca semântica em "${consultMateria}"...`);
+            } else {
+              sendStatus(`📚 [Tool: Consultar Acervo] Acionando busca semântica no acervo geral...`);
+            }
+
+            const ragResult = await runIntelligentRAG(
+              ragDecision.searchQuery || currentMessageContent,
+              consultMateria,
+              sendStatus,
+              previousMessages.slice(-4)
+            );
+            relevantDocs = ragResult.relevantDocs;
+            ragExpansion = ragResult.expansion;
           } else {
-            sendStatus(`🔍 [${activeAgent?.name || 'Agente'}] Consultando acervo geral de documentos...`);
+            sendStatus(`💡 [Raciocínio Direto] Pergunta conversacional/geral — busca no acervo de documentos dispensada.`);
           }
 
-          const ragResult = await runIntelligentRAG(
-            currentMessageContent,
-            consultMateria,
-            sendStatus,
-            previousMessages.slice(-4)
-          );
-          const relevantDocs = ragResult.relevantDocs;
-
-          // 2. Formatação das fontes de documentos aprovadas pelo avaliador
+          // 3. Formatação das fontes de documentos aprovadas pelo avaliador
           const sources: ChatSource[] = [];
           const seen = new Set<string>();
 
@@ -295,7 +311,7 @@ REGRAS CRÍTICAS:
                 page: typeof docPage === 'number' ? docPage : undefined,
                 snippet: snippet.length > 350 ? snippet.slice(0, 350) + '...' : snippet,
                 materia: docMateria,
-                technicalTerm: ragResult.expansion?.termoTecnicoPrincipal,
+                technicalTerm: ragExpansion?.termoTecnicoPrincipal,
                 evalMotivo: doc.motivo,
               });
             }
@@ -357,12 +373,24 @@ REGRAS CRÍTICAS:
                     return `[${s.index}] Documento: ${s.title} (Tópico: ${s.materia}${s.page ? ` | Pág. ${s.page}` : ''})\nConteúdo: ${s.snippet}`;
                   })
                   .join('\n\n---\n\n')
-              : 'Nenhum documento ou fonte web relevante encontrada.';
+              : '';
+
+          const contextBlock =
+            contextString.length > 0
+              ? `CONSULTA TÉCNICA AO ESPECIALISTA DA MATÉRIA ("${consultMateria}"):
+Abaixo estão os trechos e fontes oficiais levantados pelo especialista no acervo documental:
+---
+${contextString}
+---
+- Utilize os dados e orientações fornecidos pelo especialista na "CONSULTA TÉCNICA" para fundamentar a resposta.
+- Ao citar fatos, procedimentos ou dados das fontes, inclua a referência numérica entre colchetes como [1], [2] ao final da frase correspondente.`
+              : `[MODO DE RACIOCÍNIO DIRETO]:
+- Esta pergunta não exigiu consulta ao acervo de documentos ou fontes externas. Responda diretamente utilizando seu conhecimento, persona e tom de voz de forma clara, amigável e precisa. NUNCA invente citações [1] ou [2] pois nenhuma fonte foi consultada.`;
 
           // 6. Configuração do LLM
           const llm = new Ollama({
-            model: 'llama3',
-            baseUrl: 'http://localhost:11434',
+            model: process.env.OLLAMA_MODEL || 'llama3',
+            baseUrl: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
           });
 
           let scopeDescription = isGlobal
@@ -373,14 +401,14 @@ REGRAS CRÍTICAS:
             scopeDescription += ' e com acesso a pesquisas na Web em tempo real';
           }
 
-          const technicalTermHint = ragResult.expansion?.termoTecnicoPrincipal
-            ? `Termo técnico/formal correspondente no acervo: "${ragResult.expansion.termoTecnicoPrincipal}". Se a pergunta utilizou termos populares ou coloquiais, faça uma menção natural à nomenclatura formal adotada nos documentos para esclarecer o usuário com clareza.`
+          const technicalTermHint = ragExpansion?.termoTecnicoPrincipal
+            ? `Termo técnico/formal correspondente no acervo: "${ragExpansion.termoTecnicoPrincipal}". Se a pergunta utilizou termos populares ou coloquiais, faça uma menção natural à nomenclatura formal adotada nos documentos para esclarecer o usuário com clareza.`
             : '';
 
-          const topicTransitionHint = ragResult.expansion?.mudouDeAssunto
+          const topicTransitionHint = ragExpansion?.mudouDeAssunto
             ? `\nAVISO DE TRANSIÇÃO DE TÓPICO:
 O usuário MUDOU DE ASSUNTO em relação às mensagens anteriores.
-Novo assunto atual em foco: "${ragResult.expansion.assuntoAtual || currentMessageContent}".
+Novo assunto atual em foco: "${ragExpansion.assuntoAtual || currentMessageContent}".
 Responda EXCLUSIVAMENTE sobre o novo assunto solicitado. NUNCA misture nem responda com elementos do assunto anterior da conversa.\n`
             : '';
 
@@ -426,11 +454,7 @@ ${toolsInstructionBlock}
 ${technicalTermHint}
 ${topicTransitionHint}
 
-CONSULTA TÉCNICA AO ESPECIALISTA DA MATÉRIA ("${consultMateria}"):
-Abaixo estão os trechos e fontes oficiais levantados pelo especialista no acervo documental:
----
-${contextString}
----
+${contextBlock}
 
 DIRETRIZES DE EXECUÇÃO MULTIMODAL:
 - Analise detalhadamente a(s) imagem(ns) enviada(s) pelo usuário juntamente com a pergunta.
@@ -497,18 +521,12 @@ ${agentPromptTemplate}
 {technicalTermHint}
 {topicTransitionHint}
 
-CONSULTA TÉCNICA AO ESPECIALISTA DA MATÉRIA ("{consultMateria}"):
-Abaixo estão os trechos e fontes oficiais levantados pelo especialista no acervo documental:
----
-{context}
----
+{contextBlock}
 
 DIRETRIZES DE EXECUÇÃO:
 - Assuma integralmente a sua persona, tom de voz e regras descritas no seu prompt acima.
 - Se uma SKILL especializada estiver ativada acima, siga RIGOROSAMENTE todas as diretrizes de formato, estrutura e regras da skill.
 - Se FERRAMENTAS (TOOLS) estiverem habilitadas acima, utilize-as quando o formato exigir (ex: blocos de código html para páginas, links de imagem para ilustrações, diagramas mermaid).
-- Utilize com rigor os dados e orientações fornecidos pelo especialista na "CONSULTA TÉCNICA" para fundamentar a resposta.
-- Ao citar fatos, procedimentos ou dados das fontes, inclua a referência numérica entre colchetes como [1], [2] ao final da frase correspondente.
 - NUNCA invente informações não presentes nas fontes ou no histórico.
 - NUNCA inicie sua resposta com títulos como "Resposta:", "**Resposta:**", "Resposta" ou repetindo a pergunta. Comece diretamente com a sua resposta.
 
@@ -524,7 +542,7 @@ Mensagem atual do Usuário:
           ]);
 
           const stream = await chain.stream({
-            context: contextString,
+            contextBlock,
             chatHistory: chatHistoryBlock,
             question: currentMessageContent,
             consultMateria,
