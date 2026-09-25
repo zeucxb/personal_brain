@@ -589,7 +589,10 @@ Estrutura recomendada para a resposta do Fórum:
             canConsultTopics: agentFormCanConsult,
           }),
         });
-        if (!res.ok) throw new Error('Erro ao salvar alterações do agente');
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Erro ao salvar alterações do agente');
+        }
       } else {
         // Criar
         const res = await fetch('/api/agents', {
@@ -604,6 +607,10 @@ Estrutura recomendada para a resposta do Fórum:
             canConsultTopics: agentFormCanConsult,
           }),
         });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'Erro ao criar novo agente');
+        }
         const data = await res.json();
         if (data.agent) {
           setActiveAgentId(data.agent.id);

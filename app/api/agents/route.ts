@@ -12,7 +12,10 @@ export async function GET(req: NextRequest) {
     const count = await collection.countDocuments();
     if (count === 0) {
       // Seed default agents
-      await collection.insertMany(DEFAULT_AGENTS);
+      await collection.insertMany(DEFAULT_AGENTS.map(a => {
+        const { _id, ...rest } = a as any;
+        return { ...rest };
+      }));
     }
 
     const agents = await collection.find({}).sort({ isBuiltIn: -1, createdAt: 1 }).toArray();
@@ -82,9 +85,11 @@ export async function PUT(req: NextRequest) {
 
     if (name) updateFields.name = name.trim();
     if (avatar) updateFields.avatar = avatar.trim();
-    if (description !== undefined) updateFields.description = description.trim();
+    if (description !== undefined) updateFields.description = description ? description.trim() : '';
     if (systemPrompt) updateFields.systemPrompt = systemPrompt.trim();
-    if (defaultMateria !== undefined) updateFields.defaultMateria = defaultMateria.trim() || null;
+    if (defaultMateria !== undefined) {
+      updateFields.defaultMateria = defaultMateria && typeof defaultMateria === 'string' ? defaultMateria.trim() : null;
+    }
     if (canConsultTopics !== undefined) updateFields.canConsultTopics = Boolean(canConsultTopics);
 
     await collection.updateOne({ id }, { $set: updateFields });
