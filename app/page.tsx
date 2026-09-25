@@ -394,6 +394,42 @@ export default function ChatApp() {
   const [isImageDragOver, setIsImageDragOver] = useState(false);
   const [previewModalImage, setPreviewModalImage] = useState<string | null>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
+  const chatTextareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-resize chat textarea to fit content dynamically (up to 220px max height)
+  const adjustTextareaHeight = () => {
+    const textarea = chatTextareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    const newHeight = Math.min(Math.max(textarea.scrollHeight, 38), 220);
+    textarea.style.height = `${newHeight}px`;
+  };
+
+  useEffect(() => {
+    adjustTextareaHeight();
+  }, [input]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setInput(e.target.value);
+    e.target.style.height = 'auto';
+    e.target.style.height = `${Math.min(Math.max(e.target.scrollHeight, 38), 220)}px`;
+  };
+
+  const handleInputKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === 'Enter') {
+      if (e.shiftKey) {
+        // Shift + Enter: inserts newline (browser default)
+        return;
+      }
+      // Enter without Shift: submit message
+      if (!e.nativeEvent.isComposing) {
+        e.preventDefault();
+        if ((input.trim() || attachedImage) && !isLoading && activeConversation) {
+          handleSend(e as any);
+        }
+      }
+    }
+  };
 
   // Helper to optimize and convert an image file to Base64
   const processImageFile = (file: File) => {
@@ -882,9 +918,11 @@ Estrutura recomendada para a resposta do Fórum:
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if ((!input.trim() && !attachedImage) || isLoading || !activeConversation) return;
+    const trimmed = input.trim();
+    if ((!trimmed && !attachedImage) || isLoading || !activeConversation) return;
 
-    const userMsgText = input.trim() || 'Descreva e analise esta imagem detalhadamente.';
+    // Preserva a formatação exata (espaços, recuos e quebras de linha), removendo apenas quebras vazias no início e final
+    const userMsgText = input.replace(/^\n+|\n+$/g, '') || (trimmed || 'Descreva e analise esta imagem detalhadamente.');
     const currentAttachedImage = attachedImage;
     const userMsg: Message = {
       id: Date.now().toString(),
@@ -895,10 +933,11 @@ Estrutura recomendada para a resposta do Fórum:
     const botMsgId = (Date.now() + 1).toString();
     const botMsgPlaceholder: Message = { id: botMsgId, role: 'assistant', content: '' };
 
+    const firstLine = userMsgText.split('\n')[0].trim();
     const isFirstMessage = activeConversation.messages.length === 0;
     const newTitle =
       isFirstMessage && activeConversation.title === 'Nova conversa'
-        ? userMsgText.slice(0, 32) + (userMsgText.length > 32 ? '...' : '')
+        ? firstLine.slice(0, 32) + (firstLine.length > 32 ? '...' : '')
         : activeConversation.title;
 
     const updatedMessages = [...activeConversation.messages, userMsg, botMsgPlaceholder];
@@ -915,6 +954,10 @@ Estrutura recomendada para a resposta do Fórum:
     setAttachedImage(null);
     setAttachedImageName('');
     setIsLoading(true);
+
+    if (chatTextareaRef.current) {
+      chatTextareaRef.current.style.height = '38px';
+    }
 
     try {
       const response = await fetch('/api/chat', {
@@ -1722,19 +1765,21 @@ Estrutura recomendada para a resposta do Fórum:
               <span>Web</span>
               <span className="web-indicator-dot" />
             </button>
-            <input
-              type="text"
+            <textarea
+              ref={chatTextareaRef}
+              rows={1}
               placeholder={
                 attachedImage
                   ? 'Faça uma pergunta sobre a imagem ou pressione Enviar para analisá-la...'
                   : webSearchEnabled
-                  ? `Pesquisar na Web e no acervo (${activeSubject})...`
+                  ? `Pesquisar na Web e no acervo (${activeSubject})... (Shift+Enter para quebra de linha)`
                   : activeSubject === 'Geral'
-                  ? 'Pergunte algo no acervo global de todos os tópicos...'
-                  : `Pergunte algo sobre ${activeSubject}...`
+                  ? 'Pergunte algo no acervo global de todos os tópicos... (Shift+Enter para quebra de linha)'
+                  : `Pergunte algo sobre ${activeSubject}... (Shift+Enter para quebra de linha)`
               }
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={handleInputChange}
+              onKeyDown={handleInputKeyDown}
               onPaste={handleImagePaste}
               disabled={isLoading}
             />

@@ -214,6 +214,9 @@ body {
   background-color: var(--chat-user);
   color: #fff;
   border-bottom-right-radius: 0.25rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  tab-size: 2;
 }
 
 .message.assistant,
@@ -371,28 +374,65 @@ body {
 
 .input-box {
   display: flex;
-  align-items: center;
-  gap: 0.75rem;
+  align-items: flex-end;
+  gap: 0.65rem;
   background-color: var(--panel-bg);
   padding: 0.45rem 0.65rem;
-  border-radius: 1rem;
+  border-radius: 1.15rem;
   border: 1px solid var(--panel-border);
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
-.input-box input {
+.input-box:focus-within {
+  border-color: rgba(59, 130, 246, 0.5);
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.15);
+}
+
+.input-box input,
+.input-box textarea {
   flex: 1;
   min-width: 0;
   width: 100%;
   background: transparent;
   border: none;
   color: var(--text-main);
-  padding: 0.65rem 0.5rem;
+  padding: 0.55rem 0.5rem;
   font-size: 0.95rem;
+  font-family: inherit;
+  line-height: 1.5;
   outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+  tab-size: 2;
+}
+
+.input-box textarea {
+  resize: none;
+  min-height: 38px;
+  max-height: 220px;
+  height: 38px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.input-box textarea::-webkit-scrollbar {
+  width: 6px;
+}
+
+.input-box textarea::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.input-box textarea::placeholder,
+.input-box input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.7;
 }
 
 .btn-web-toggle {
@@ -400,6 +440,7 @@ body {
   border: 1px solid var(--panel-border) !important;
   color: var(--text-muted) !important;
   padding: 0.5rem 0.85rem !important;
+  height: 38px !important;
   border-radius: 0.75rem !important;
   display: flex !important;
   align-items: center !important;
@@ -443,13 +484,17 @@ body {
   background-color: var(--accent);
   color: #fff;
   border: none;
-  padding: 0.7rem 1.35rem;
+  padding: 0.55rem 1.35rem;
+  height: 38px;
   border-radius: 0.75rem;
   font-weight: 600;
   cursor: pointer;
   transition: background-color 0.2s ease;
   white-space: nowrap;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .input-box .btn-send:hover {
